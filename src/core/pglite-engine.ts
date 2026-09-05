@@ -1960,20 +1960,23 @@ export class PGLiteEngine implements BrainEngine {
     compiledTruth: string,
     timeline: string,
     contentHash: string,
+    opts?: { title?: string },
   ): Promise<void> {
     // Parity with PostgresEngine.refreshPageBody: narrow UPDATE only.
     // The deleted_at filter prevents a redirect retry from reviving a
-    // canonical that was already purged.
+    // canonical that was already purged. `opts.title` stamps a re-derived
+    // title (title-precedence reconcile) without any chunk churn.
     await this.db.query(
       `UPDATE pages
          SET compiled_truth = $1,
              timeline = $2,
              content_hash = $3,
+             title = COALESCE($6, title),
              updated_at = now()
        WHERE source_id = $4
          AND slug = $5
          AND deleted_at IS NULL`,
-      [compiledTruth, timeline, contentHash, sourceId, slug],
+      [compiledTruth, timeline, contentHash, sourceId, slug, opts?.title ?? null],
     );
   }
 

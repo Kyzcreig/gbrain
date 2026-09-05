@@ -954,16 +954,20 @@ export class PostgresEngine implements BrainEngine {
     compiledTruth: string,
     timeline: string,
     contentHash: string,
+    opts?: { title?: string },
   ): Promise<void> {
     const sql = this.sql;
     // Narrow UPDATE — leaves frontmatter, type, chunks, links, embeddings,
     // tags, takes untouched. Skips soft-deleted rows so a redirect retry
     // can't accidentally reanimate the body of a deleted canonical.
+    // `opts.title` (2026-09-05, title-precedence reconcile): stamp the
+    // re-derived title in the same narrow UPDATE — still no chunk churn.
     await sql`
       UPDATE pages
       SET compiled_truth = ${compiledTruth},
           timeline = ${timeline},
           content_hash = ${contentHash},
+          title = COALESCE(${opts?.title ?? null}, title),
           updated_at = now()
       WHERE source_id = ${sourceId}
         AND slug = ${slug}

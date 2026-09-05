@@ -2372,6 +2372,7 @@ export interface BrainEngine {
     compiledTruth: string,
     timeline: string,
     contentHash: string,
+    opts?: { title?: string },
   ): Promise<void>;
 
   /**

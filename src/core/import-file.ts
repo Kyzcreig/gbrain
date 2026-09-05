@@ -755,6 +755,39 @@ export async function importFromContent(
     }
   }
 
+  // 2026-09-05 (local): title-precedence reconcile. #2446 changed title
+  // derivation (frontmatter > body H1 > humanized filename). Rows imported
+  // before that carry a hash computed with the FILENAME-humanized title, so
+  // every one of them misses the fast path above and gets re-chunked +
+  // re-embedded + version-snapshotted for a title-only delta. Measured on
+  // the fleet brain 2026-09-05: 5,220 pages rewritten in one nightly run vs
+  // 4–16/day baseline; 41k more queued. When the row matches the old-title
+  // hash, content is unchanged — stamp title + canonical hash narrowly and skip.
+  if (existing && !opts.forceRechunk && typeof engine.refreshPageBody === 'function') {
+    const legacyTitle = inferLegacyFilenameTitle(slug + '.md');
+    if (legacyTitle && legacyTitle !== parsed.title) {
+      const oldTitleHash = contentHash({
+        title: legacyTitle,
+        type: parsed.type,
+        compiled_truth: parsed.compiled_truth,
+        timeline: parsed.timeline,
+        frontmatter: parsed.frontmatter,
+        tags: parsed.tags,
+      });
+      if (existing.content_hash === oldTitleHash) {
+        await engine.refreshPageBody(
+          slug,
+          sourceId ?? 'default',
+          parsed.compiled_truth,
+          parsed.timeline || '',
+          hash,
+          { title: parsed.title },
+        );
+        return { slug, status: 'skipped', chunks: 0, parsedPage, ...(typeWarning ? { type_warning: typeWarning } : {}) };
+      }
+    }
+  }
+
   // v0.41.13 (#1309) — identity-based cross-slug dedup pre-check.
   //
   // Catches the overlapping-ingest-roots bug class: when a user runs
@@ -1227,6 +1260,16 @@ async function verifyPageReadable(
  * `people/elon` page on the next `gbrain sync` or `gbrain import`. In shared
  * brains where PRs are mergeable, this is a silent page-hijack primitive.
  */
+
+/** The pre-#2446 title fallback (humanized filename), used ONLY to recognize
+ * rows hashed under the old title precedence. Mirrors markdown.ts inferTitle. */
+function inferLegacyFilenameTitle(filePath?: string): string {
+  if (!filePath) return 'Untitled';
+  const parts = filePath.split('/');
+  const filename = parts[parts.length - 1]?.replace(/\.md$/i, '') || 'Untitled';
+  return filename.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 export async function importFromFile(
   engine: BrainEngine,
   filePath: string,
