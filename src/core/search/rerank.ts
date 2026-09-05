@@ -29,6 +29,9 @@ import { rerank as gatewayRerank, RerankError, type RerankInput, type RerankResu
 import { BudgetExhausted } from '../budget/budget-tracker.ts';
 import { logRerankFailure, type RerankFailureReason } from '../rerank-audit.ts';
 import { warnOncePerProcess } from '../utils.ts';
+// FLEET FORK PATCH (re-applied on v0.48.2.0 2026-09-04): fleet reranker health
+// edges (Discord paging + failover state). Upstream has no equivalent.
+import { recordRerankFailure, recordRerankSuccess } from '../rerank-health-alert.ts';
 
 /** #4648: the two audited success-shaped pass-through causes. */
 export type RerankPassThroughReason = 'empty_result_set' | 'malformed_shape';
@@ -85,6 +88,31 @@ function classifyRerankFailure(err: unknown): RerankFailureReason {
   return 'unknown';
 }
 
+function reportFailure(
+  query: string,
+  model: string,
+  reason: RerankFailureReason,
+  docCount: number,
+  errorSummary: string,
+): void {
+  try {
+    logRerankFailure({
+      model,
+      reason,
+      query_hash: hashQuery(query),
+      doc_count: docCount,
+      error_summary: errorSummary,
+    });
+  } catch {
+    // Audit logging must never break search.
+  }
+  try {
+    recordRerankFailure({ model, reason });
+  } catch {
+    // Fleet notification/state tracking must never break search.
+  }
+}
+
 /**
  * Reorder the top `topNIn` results by reranker relevance score. The
  * un-reranked tail (any rows past topNIn) preserves its original RRF
@@ -135,17 +163,7 @@ export async function applyReranker(
       return results;
     }
     const errorSummary = err instanceof Error ? err.message : String(err);
-    try {
-      logRerankFailure({
-        model: opts.model ?? 'unknown',
-        reason,
-        query_hash: hashQuery(query),
-        doc_count: documents.length,
-        error_summary: errorSummary,
-      });
-    } catch {
-      // Audit logging must never break search.
-    }
+    reportFailure(query, opts.model ?? 'unknown', reason, documents.length, errorSummary);
     return results;
   }
 
@@ -185,7 +203,22 @@ export async function applyReranker(
     } catch {
       // Meta stamping must never break search.
     }
+    // FLEET FORK PATCH (re-applied on v0.48.2.0 2026-09-04): upstream #4648
+    // absorbed the AUDIT half of this branch (logRerankFailure + warnOnce), but
+    // not the fleet health-state/paging half. Record the degradation edge so the
+    // failover proxy + Discord paging still fire. Folded INTO upstream's branch —
+    // a second `if (!Array.isArray(reranked) ...)` block would be unreachable.
+    try {
+      recordRerankFailure({ model: opts.model ?? 'unknown', reason: 'unknown' });
+    } catch {
+      // Fleet notification/state tracking must never break search.
+    }
     return results;
+  }
+  try {
+    recordRerankSuccess({ model: opts.model ?? 'unknown' });
+  } catch {
+    // Fleet recovery notification/state tracking must never break search.
   }
 
   // Build the reordered head. We keep ONLY indices the reranker returned

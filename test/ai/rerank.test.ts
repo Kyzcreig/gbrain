@@ -249,6 +249,22 @@ describe('gateway.rerank() — error classification', () => {
     }
   });
 
+  test('wall-clock timeout → timeout when transport rejects with the abort reason', async () => {
+    __setRerankTransportForTests(async (_url, init) => {
+      await new Promise<never>((_resolve, reject) => {
+        init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+      });
+      throw new Error('unreachable');
+    });
+    try {
+      await rerank({ query: 'q', documents: ['d'], timeoutMs: 5 });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(RerankError);
+      expect((err as RerankError).reason).toBe('timeout');
+    }
+  });
+
   test('malformed response (no results array) → unknown', async () => {
     __setRerankTransportForTests(async () => mockResp({ wrong_shape: true }));
     try {

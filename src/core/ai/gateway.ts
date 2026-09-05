@@ -4704,7 +4704,11 @@ export async function rerank(input: RerankInput): Promise<RerankResult[]> {
   // Timeout via AbortController; merges with caller-supplied signal.
   const ctrl = new AbortController();
   const timeoutMs = input.timeoutMs ?? DEFAULT_RERANK_TIMEOUT_MS;
-  const t = setTimeout(() => ctrl.abort(new Error('rerank timed out')), timeoutMs);
+  let timedOut = false;
+  const t = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort(new Error('rerank timed out'));
+  }, timeoutMs);
   if (input.signal) {
     if (input.signal.aborted) ctrl.abort(input.signal.reason);
     else input.signal.addEventListener('abort', () => ctrl.abort(input.signal!.reason), { once: true });
@@ -4776,6 +4780,12 @@ export async function rerank(input: RerankInput): Promise<RerankResult[]> {
   } catch (err) {
     _rerankRecord();
     if (err instanceof RerankError) throw err;
+    // Bun fetch rejects with AbortSignal.reason (an ordinary Error) when the
+    // timer calls abort(reason), not necessarily a DOMException AbortError.
+    if (timedOut) {
+      const msg = err instanceof Error ? err.message : 'rerank timed out';
+      throw new RerankError(msg, 'timeout');
+    }
     // AbortError on timeout — classify cleanly.
     if (err && typeof err === 'object' && (err as any).name === 'AbortError') {
       const msg = (err as Error).message || 'rerank aborted';
