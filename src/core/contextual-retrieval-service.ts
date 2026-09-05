@@ -43,6 +43,7 @@ import { createHash } from 'crypto';
 import * as fs from 'node:fs';
 import { embedBatch } from './embedding.ts';
 import { resolveContextualRetrievalMode } from './contextual-retrieval-resolver.ts';
+import { enqueueZembedPageRevision } from './zembed-daytime.ts';
 import {
   buildContextualPrefix,
   modeRequiresSynopsis,
@@ -398,6 +399,7 @@ export async function reembedPageWithContextualRetrieval(
         const detail = err instanceof Error ? err.message : String(err);
         return { kind: 'transient_error', cause: 'db', detail };
       }
+      await enqueueZembedPageRevision(args.engine, args.pageSlug, args.sourceId);
 
       if (fallbackReason != null) {
         return {

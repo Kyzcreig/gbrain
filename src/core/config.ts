@@ -365,6 +365,19 @@ export interface GBrainConfig {
   search_embedding_column?: string;
 
   /**
+   * P2 cloud zembed generation routing. Absent/disabled is deliberately
+   * identical to the legacy OpenAI read path. The two timestamps are the
+   * post-dual-write fallback clock; fallback refuses after 30 hours.
+   */
+  zembed?: {
+    enabled?: boolean;
+    current_generation?: 'openai' | 'zembed';
+    dual_write_active?: boolean;
+    openai_last_write_at?: string;
+    p6_cutover_at?: string;
+  };
+
+  /**
    * v0.41 content-sanity tunables. Read via file/env/DB plane (D1: lint
    * lifts to DB config when reachable). Resolution order:
    * env > file > DB > defaults from `src/core/content-sanity.ts`.
@@ -1272,6 +1285,12 @@ export const KNOWN_CONFIG_KEYS: readonly string[] = [
   'embedding_image_ocr_model',
   'embedding_columns',
   'search_embedding_column',
+  'zembed',
+  'zembed.enabled',
+  'zembed.current_generation',
+  'zembed.dual_write_active',
+  'zembed.openai_last_write_at',
+  'zembed.p6_cutover_at',
   'remote_mcp',
   'sync',
   'sync.repo_path',

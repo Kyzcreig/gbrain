@@ -1213,10 +1213,12 @@ export async function hybridSearch(
   // falls through to the file-plane sync loadConfig() — same shape, just
   // misses DB-plane overrides.
   const mergedCfg = await loadConfigWithEngine(engine).catch(() => null);
-  const cfgForColumn = mergedCfg ?? ((await import('../config.ts')).loadConfig()) ?? null;
-  const resolvedCol = cfgForColumn
-    ? resolveEmbeddingColumn(opts, cfgForColumn)
-    : resolveEmbeddingColumn(opts, { engine: 'pglite' });
+  const cfgForColumn = mergedCfg
+    ?? ((await import('../config.ts')).loadConfig())
+    ?? { engine: 'pglite' as const };
+  let resolvedCol = resolveGenerationAwareColumn(opts, cfgForColumn);
+  const zembedGenerationEnabled = cfgForColumn.zembed?.enabled === true
+    && cfgForColumn.zembed.current_generation === 'zembed';
 
   const limit = opts?.limit || resolvedMode.searchLimit;
   const offset = opts?.offset || 0;
@@ -2214,7 +2216,7 @@ export async function hybridSearch(
   // survives the trim.
   const adaptiveCfg = resolveAdaptiveReturn(
     opts?.adaptiveReturn,
-    adaptiveReturnFromConfig(cfgForColumn as Record<string, unknown> | null),
+    adaptiveReturnFromConfig(cfgForColumn as unknown as Record<string, unknown>),
   );
   let returnPool = aliasHopped;
   let adaptiveDecision: AdaptiveReturnDecision | undefined;
@@ -2436,7 +2438,7 @@ export async function hybridSearchCached(
   // only when ALL match. Otherwise skip.
   const mergedCfgCached = await loadConfigWithEngine(engine).catch(() => null);
   const cfgCached = mergedCfgCached ?? ((await import('../config.ts')).loadConfig()) ?? { engine: 'pglite' as const };
-  const resolvedColCached = resolveEmbeddingColumn(opts, cfgCached);
+  const resolvedColCached = resolveGenerationAwareColumn(opts, cfgCached);
   const isNonDefaultColumn = !isCacheSafe(resolvedColCached, cfgCached);
 
   // wave-g (#4415): classify ONCE with the brain's `search.intent_patterns`

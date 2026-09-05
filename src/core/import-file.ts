@@ -50,6 +50,7 @@ import { DEFAULT_SYNOPSIS_MODEL } from './page-summary.ts';
 import { runGuardrails } from './guardrails.ts';
 import { FACTS_FENCE_BEGIN, FACTS_FENCE_END, parseFactsFence, renderFactsTable, restoreHiddenFactRows, factsGapWarning } from './facts-fence.ts';
 import { scanFencedBlocks, MAX_FENCES_PER_PAGE } from './fence-scan.ts';
+import { enqueueZembedPageRevision } from './zembed-daytime.ts';
 
 /**
  * v0.20.0 Cathedral II Layer 8 D2 — markdown fence extraction helper.
@@ -1108,6 +1109,11 @@ export async function importFromContent(
     throw decorateEmbeddingDimError(err, slug, activeColName);
   });
 
+  // P3 cloud-only dual-write seam: the canonical/OpenAI transaction above is
+  // authoritative. Queue persistence is post-commit and fail-open; this hook
+  // never calls the zembed document provider and never alters ImportResult.
+  await enqueueZembedPageRevision(engine, slug, sourceId);
+
   // T3 — project frontmatter `aliases:` into page_aliases (free-text alias
   // resolution for search). Runs AFTER the page write commits so the slug
   // exists. Fail-soft: a pre-v110 brain has no page_aliases table yet (the
@@ -1581,6 +1587,7 @@ export async function importCodeFile(
       await tx.deleteChunks(slug, txOpts);
     }
   });
+  await enqueueZembedPageRevision(engine, slug, sourceId);
 
   // Post-write read-back verification.
   // Same guard as the markdown path: a code page write is not "done" until
@@ -1751,6 +1758,9 @@ export async function withImportTransaction(
     }
     if (spec.after) await spec.after(tx);
   });
+  if (spec.chunks !== undefined) {
+    await enqueueZembedPageRevision(engine, spec.slug);
+  }
 }
 
 /**
