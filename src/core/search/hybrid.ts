@@ -24,6 +24,13 @@ import { embed, embedQuery } from '../embedding.ts';
 import { registerBackgroundWorkDrainer } from '../background-work.ts';
 import { isDbAccessFailure } from '../pg-access-classify.ts';
 import { resolveEmbeddingColumn, isCacheSafe } from './embedding-column.ts';
+// FLEET FORK PATCH (zembed, re-applied on v0.48.2.0 2026-09-04): generation-aware
+// column selection. Double-keyed default-OFF (zembed.enabled AND
+// current_generation==='zembed'); with zembed off this resolves IDENTICALLY to
+// upstream's resolveEmbeddingColumn. The generation-aware BATCH READ path was
+// deliberately NOT re-applied — upstream restructured this whole vector-read
+// region (multimodal/unified routing) and prod reads run 100% OpenAI.
+import { resolveGenerationAwareColumn } from './embedding-generation.ts';
 import { resolveHardExcludes } from './source-boost.ts';
 import {
   resolveAdaptiveReturn,
