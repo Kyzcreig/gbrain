@@ -26,6 +26,11 @@ export const anthropic: Recipe = {
         'claude-fable-5',
         'claude-opus-5',
         'claude-opus-4-8',
+        // FLEET FORK PATCH (2026-08-03, re-applied on v0.48.2.0 2026-09-04):
+        // relay-only fable-5-1 alias (claude-apr :18810), the `think` +
+        // brainstorm/LSD model. fable-5 parity. Upstream already ships bare
+        // 'claude-fable-5' above — do NOT re-add it (duplicate key).
+        'claude-fable-5-1',
         'claude-opus-4-7',
         'claude-sonnet-5',
         'claude-sonnet-4-6',
@@ -35,6 +40,10 @@ export const anthropic: Recipe = {
       supports_subagent_loop: true,
       supports_prompt_cache: true,
       model_context_tokens: {
+        // FLEET FORK PATCH (v0.48.2.0 2026-09-04): fable-5-1 at fable-5 parity.
+        // This map is where upstream moved the old
+        // src/core/cycle/synthesize.ts MODEL_CONTEXT_TOKENS (deleted upstream).
+        'claude-fable-5-1': 1_000_000,
         'claude-fable-5': 1_000_000,
         'claude-opus-5': 1_000_000,
         'claude-sonnet-5': 1_000_000,

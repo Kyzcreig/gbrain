@@ -3556,6 +3556,46 @@ function instantiateChat(recipe: Recipe, modelId: string, cfg: AIGatewayConfig):
       const apiKey = cfg.env.ANTHROPIC_API_KEY;
       if (!apiKey) throw new AIConfigError(`Anthropic chat requires ANTHROPIC_API_KEY.`, recipe.setup_hint);
       const baseURL = resolveNativeBaseUrl('anthropic', cfg);
+      // FLEET FORK PATCH (2026-08-03, re-applied on v0.48.2.0 2026-09-04):
+      // opt-in adaptive reasoning effort for adaptive-capable Claudes
+      // (fable-5/fable-5-1, opus-4-8/5, 4.6+). When GBRAIN_ANTHROPIC_EFFORT is
+      // set (low|medium|high|xhigh|max), inject {thinking:{type:'adaptive'},
+      // output_config:{effort}} into /v1/messages bodies at the fetch seam (the
+      // AI SDK has no knob for this shape). Thinking tokens spend from
+      // max_tokens, so floor it at 12K (cap 32K) — callers like brainstorm
+      // crosses ask for 1500 which high effort would consume entirely. Sampling
+      // params are dropped (adaptive rejects temperature/top_p/top_k). Unset env
+      // = byte-identical legacy behavior.
+      // NOTE: upstream 0.48.2 added resolveNativeBaseUrl(); it is preserved above
+      // and threaded into BOTH createAnthropic() calls below.
+      const adaptiveEffort = process.env.GBRAIN_ANTHROPIC_EFFORT;
+      if (adaptiveEffort) {
+        const wrappedFetch = (async (input: any, init?: any) => {
+          try {
+            const url = typeof input === 'string' ? input : (input?.url ?? String(input));
+            if (init?.body && typeof init.body === 'string' && url.includes('/messages')) {
+              const body = JSON.parse(init.body);
+              if (!body.thinking) {
+                body.thinking = { type: 'adaptive' };
+                body.output_config = { ...(body.output_config ?? {}), effort: adaptiveEffort };
+                delete body.temperature;
+                delete body.top_p;
+                delete body.top_k;
+                // Thinking spends from max_tokens: floor small calls at 12K AND add
+                // 16K headroom on top of the caller's own budget (the 96-idea judge
+                // asks ~14.9K for its JSON alone — without headroom, thinking
+                // truncates the JSON and the whole judge phase fails to parse).
+                body.max_tokens = Math.min(32_000, Math.max((body.max_tokens ?? 0) + 16_000, 12_000));
+                init = { ...init, body: JSON.stringify(body) };
+              }
+            }
+          } catch {
+            // Malformed/opaque body — pass through untouched.
+          }
+          return fetch(input, init);
+        }) as typeof fetch;
+        return createAnthropic({ apiKey, fetch: wrappedFetch, ...(baseURL ? { baseURL } : {}) }).languageModel(modelId);
+      }
       return createAnthropic({ apiKey, ...(baseURL ? { baseURL } : {}) }).languageModel(modelId);
     }
     case 'claude-cli': {

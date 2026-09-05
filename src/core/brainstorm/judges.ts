@@ -65,6 +65,12 @@ export const ANTHROPIC_OUTPUT_CAPS: Record<string, number> = {
   'claude-opus-5': 32_000,
   'claude-sonnet-5': 64_000,
   'claude-opus-4-8': 32_000,
+  // FLEET FORK PATCH (2026-08-03, re-applied on v0.48.2.0 2026-09-04):
+  // relay-only fable-5-1 alias (claude-apr :18810) at fable-5 PARITY (64_000).
+  // Upstream already ships bare 'claude-fable-5': 64_000 above — do NOT re-add
+  // it; a duplicate key here silently last-wins and would DOWNGRADE upstream's
+  // 64K cap to 32K.
+  'claude-fable-5-1': 64_000,
   'claude-opus-4-7': 32_000,
   'claude-sonnet-4-6': 64_000,
   'claude-haiku-4-5': 64_000,

@@ -576,7 +576,15 @@ async function _runBrainstormInner(
   const embedFn = opts.embedQueryFn ?? embedQuery;
 
   // ---- Phase 0: cost preview + TTY grace ----
-  const modelStr = resolveBrainstormChatModel(config, opts.modelOverride);
+  // FLEET FORK PATCH (2026-08-03, re-applied on v0.48.2.0 2026-09-04): default
+  // brainstorm/LSD model → fable-5-1 via the claude-apr relay (:18810), unless
+  // overridden. Upstream's resolveBrainstormChatModel(config, override) now owns
+  // precedence (explicit override → config.chat_model → sonnet default); we only
+  // insert the GBRAIN_BRAINSTORM_MODEL env override BELOW an explicit --model and
+  // ABOVE the config/upstream default, preserving upstream behavior when unset.
+  const modelStr = opts.modelOverride
+    ?? process.env.GBRAIN_BRAINSTORM_MODEL
+    ?? resolveBrainstormChatModel(config, undefined);
   const { aborted, estimate } = await previewCostAndWait({
     profile,
     model: modelStr,
@@ -784,7 +792,9 @@ async function _runBrainstormInner(
       far: cross.far,
     });
     const chatOpts: ChatOpts = {
-      model: opts.modelOverride,
+      // FLEET FORK PATCH (2026-08-03): use the resolved modelStr (override → env → fable-5
+      // default) instead of raw opts.modelOverride, which left undefined → gateway sonnet default.
+      model: modelStr,
       system,
       messages: [{ role: 'user', content: user }],
       maxTokens: 1500,
@@ -885,7 +895,10 @@ async function _runBrainstormInner(
       far_slug: i.far_slug,
     }));
     const judgeResult = await runJudge(profile.judge_config, judgeInput, {
-      modelOverride: (await resolveBrainstormJudgeModel(engine, opts.judgeModel)) ?? opts.modelOverride,
+      // FLEET FORK PATCH: fall back to the RESOLVED modelStr (override → env →
+      // config/default) instead of raw opts.modelOverride, which left undefined →
+      // gateway sonnet default for the judge phase.
+      modelOverride: (await resolveBrainstormJudgeModel(engine, opts.judgeModel)) ?? modelStr,
       chatFn: opts.chatFn,
       activeBiasTags: activeBiasTags ?? undefined,
       abortSignal: opts.abortSignal,
