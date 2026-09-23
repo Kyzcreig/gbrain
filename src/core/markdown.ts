@@ -51,6 +51,13 @@ export interface ParsedMarkdown {
    * explicit frontmatter type is an override; absence means "don't change it".
    */
   typeExplicit?: boolean;
+  /**
+   * true when `title` came from an explicit frontmatter `title:` field.
+   * Frontmatter `title:` is stripped from the hashed frontmatter, so the
+   * importer's title-precedence reconcile must not treat an edit to it as a
+   * title-only legacy delta (it would swallow a real edit).
+   */
+  titleExplicit?: boolean;
   title: string;
   tags: string[];
   /** Present iff opts.validate. Empty array means no errors. */
@@ -299,8 +306,9 @@ export function parseMarkdown(
   // #4526: an embedded leading fence block's `title:` outranks only the
   // humanized-filename fallback — it rescues pages the pre-fix parse left
   // with their frontmatter stuck in the body, without overriding real titles.
+  const explicitTitle = coerceFrontmatterString(frontmatter.title).trim();
   const title =
-    coerceFrontmatterString(frontmatter.title).trim() ||
+    explicitTitle ||
     inferTitleFromBody(body) ||
     inferTitleFromEmbeddedFrontmatter(body) ||
     inferTitle(filePath);
@@ -320,6 +328,7 @@ export function parseMarkdown(
     slug,
     type,
     typeExplicit: explicitType !== '',
+    titleExplicit: explicitTitle !== '',
     title,
     tags,
   };

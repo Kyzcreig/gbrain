@@ -763,7 +763,12 @@ export async function importFromContent(
   // the fleet brain 2026-09-05: 5,220 pages rewritten in one nightly run vs
   // 4–16/day baseline; 41k more queued. When the row matches the old-title
   // hash, content is unchanged — stamp title + canonical hash narrowly and skip.
-  if (existing && !opts.forceRechunk && typeof engine.refreshPageBody === 'function') {
+  // Only for NON-frontmatter titles: pre-#2446 already honored frontmatter
+  // `title:`, so such rows were never hashed with the filename title — and
+  // since `title:` is stripped from the hashed frontmatter, a real edit to it
+  // whose OLD value equals the humanized filename would otherwise match here
+  // and be silently swallowed (no re-import, no version snapshot).
+  if (existing && !opts.forceRechunk && parsed.titleExplicit !== true && typeof engine.refreshPageBody === 'function') {
     const legacyTitle = inferLegacyFilenameTitle(slug + '.md');
     if (legacyTitle && legacyTitle !== parsed.title) {
       const oldTitleHash = contentHash({
