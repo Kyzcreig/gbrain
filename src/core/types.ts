@@ -1593,6 +1593,7 @@ export interface PageVersion {
   page_id: number;
   compiled_truth: string;
   frontmatter: Record<string, unknown>;
+  title?: string | null; // v146: title at snapshot; NULL on pre-v146 rows (revert keeps current)
   snapshot_at: Date;
 }
 

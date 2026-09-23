@@ -5552,8 +5552,8 @@ export class PGLiteEngine implements BrainEngine {
   async createVersion(slug: string, opts?: { sourceId?: string }): Promise<PageVersion> {
     const sourceId = opts?.sourceId ?? 'default';
     const { rows } = await this.db.query(
-      `INSERT INTO page_versions (page_id, compiled_truth, frontmatter)
-       SELECT id, compiled_truth, frontmatter
+      `INSERT INTO page_versions (page_id, compiled_truth, frontmatter, title)
+       SELECT id, compiled_truth, frontmatter, title
        FROM pages WHERE slug = $1 AND source_id = $2
        RETURNING *`,
       [slug, sourceId]
@@ -5605,7 +5605,7 @@ export class PGLiteEngine implements BrainEngine {
       await this.db.query(
         `UPDATE pages SET
           compiled_truth = pv.compiled_truth,
-          frontmatter = pv.frontmatter,
+          frontmatter = pv.frontmatter, title = COALESCE(pv.title, pages.title),
           updated_at = now()
         FROM page_versions pv
         WHERE pages.slug = $1 AND pages.source_id = $3
@@ -5617,7 +5617,7 @@ export class PGLiteEngine implements BrainEngine {
     await this.db.query(
       `UPDATE pages SET
         compiled_truth = pv.compiled_truth,
-        frontmatter = pv.frontmatter,
+        frontmatter = pv.frontmatter, title = COALESCE(pv.title, pages.title),
         updated_at = now()
       FROM page_versions pv
       WHERE pages.slug = $1 AND pv.id = $2 AND pv.page_id = pages.id`,

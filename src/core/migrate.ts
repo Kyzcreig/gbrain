@@ -6440,6 +6440,18 @@ export const MIGRATIONS: Migration[] = [
       END $$;
     `,
   },
+  {
+    version: 146,
+    name: 'page_versions_title',
+    // page_versions snapshotted compiled_truth + frontmatter but not the
+    // page title, and parseMarkdown strips `title:` out of the stored
+    // frontmatter — so a title-only edit produced a version that revert
+    // could not undo. createVersion now snapshots title; revertToVersion
+    // restores COALESCE(pv.title, pages.title) so pre-v146 rows (NULL) keep
+    // the current title instead of blanking it. Nullable add: idempotent.
+    idempotent: true,
+    sql: `ALTER TABLE page_versions ADD COLUMN IF NOT EXISTS title TEXT;`,
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS.length > 0

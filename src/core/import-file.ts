@@ -771,6 +771,8 @@ export async function importFromContent(
         tags: parsed.tags,
       });
       if (existing.content_hash === oldTitleHash) {
+        // Title changes (legacy restamp OR an explicit-title deletion — same row shape) stay revertible.
+        if (existing.title !== parsed.title) await engine.createVersion(slug, { sourceId: sourceId ?? 'default' });
         await engine.refreshPageBody(
           slug,
           sourceId ?? 'default',
