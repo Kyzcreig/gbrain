@@ -1,10 +1,10 @@
 /**
- * v0.40.3.0 — per-chunk Haiku synopsis generator.
+ * v0.40.3.0 — per-chunk synopsis generator.
  *
  * For the tokenmax tier (D1 — Anthropic's published per-chunk synopsis
  * method), this module owns:
  *
- *   - Routing the Haiku call through `gateway.chat(tier='utility')` —
+ *   - Routing the synopsis call through `gateway.chat()` —
  *     the cheapest tier per CLAUDE.md gateway docs.
  *   - The richer failure envelope from D27 P1-2: distinguishing
  *     refusal / empty / malformed (→ page-level fall-back to title-only
@@ -33,16 +33,27 @@
 import { chat, type ChatOpts, type ChatResult } from './ai/gateway.ts';
 import { logSynopsisFailure, type SynopsisFailureKind } from './audit-synopsis.ts';
 import { sanitizeSynopsis } from './embedding-context.ts';
+import { resolveTierDefault } from './model-config.ts';
 
 /**
- * Hard cap on Haiku output tokens. ~200 tokens gives 50-100 token
+ * Default cap on synopsis output tokens. ~200 tokens gives 50-100 token
  * synopsis with some headroom; the wrapper layer caps the final
  * synopsis at SUMMARY_HARD_CAP_CHARS (300) regardless.
+ *
+ * #3883: overridable per call via `GeneratePerChunkSynopsisArgs.maxTokens`,
+ * threaded from the `models.synopsis_max_tokens` config by the service
+ * layer (this module stays DB-free). Exported so the service's config
+ * resolver and tests share the default.
  */
-const HAIKU_MAX_TOKENS = 200;
+export const SYNOPSIS_MAX_TOKENS = 200;
 
-/** Default model when caller doesn't override. Resolves through the gateway. */
-const DEFAULT_SYNOPSIS_MODEL = 'anthropic:claude-haiku-4-5-20251001';
+/**
+ * Stable synopsis-model anchor for corpus_generation hashing (title-mode
+ * pages and the inline import path) — NOT the live chat default. Changing
+ * this string invalidates prior embeddings via the D27 P1-5 contract; the
+ * live default is the key-aware utility tier (#3813).
+ */
+export const DEFAULT_SYNOPSIS_MODEL = 'anthropic:claude-haiku-4-5-20251001';
 
 /**
  * Hard cap on `documentText` length (chars) before send.
@@ -100,7 +111,7 @@ export interface GeneratePerChunkSynopsisArgs {
   documentText: string;
   /** The chunk for which we're generating the synopsis. */
   chunkText: string;
-  /** The page's title — gives Haiku document-level anchor. */
+  /** The page's title — gives the synopsis model a document-level anchor. */
   pageTitle: string;
   /** Page slug for audit logging on failure. */
   pageSlug: string;
@@ -112,6 +123,12 @@ export interface GeneratePerChunkSynopsisArgs {
   model?: string;
   /** Optional abort signal threaded through gateway.chat. */
   abortSignal?: AbortSignal;
+  /**
+   * #3883: output-token cap for the synopsis call. Defaults to
+   * SYNOPSIS_MAX_TOKENS (200). The service layer threads the
+   * `models.synopsis_max_tokens` config here.
+   */
+  maxTokens?: number;
 }
 
 /**
@@ -131,8 +148,7 @@ export type GeneratePerChunkSynopsisResult =
  *
  * Caller is responsible for:
  *   - Rate-leasing via `src/core/minions/rate-leases.ts` (the SERVICE
- *     layer does this with the global `anthropic:utility:contextual-synopsis`
- *     key per D26 P0-3).
+ *     layer does this with a resolved-model-specific synopsis key per D26 P0-3).
  *   - LRU caching by `(content_hash, chunk_index, corpus_generation,
  *     source_text_hash)`. This module is a pure transformer — no cache
  *     lookup here; the service decides when to call us.
@@ -145,12 +161,15 @@ export async function generatePerChunkSynopsis(
   args: GeneratePerChunkSynopsisArgs,
 ): Promise<GeneratePerChunkSynopsisResult> {
   const userPrompt = buildUserPrompt(args.pageTitle, args.documentText, args.chunkText);
+  const maxTokens = args.maxTokens ?? SYNOPSIS_MAX_TOKENS;
 
   const chatOpts: ChatOpts = {
-    model: args.model ?? DEFAULT_SYNOPSIS_MODEL,
+    // #3813: key-aware tier default, not the hardcoded hash anchor above —
+    // an OPENAI_API_KEY-only install must not route to Anthropic.
+    model: args.model ?? resolveTierDefault('utility'),
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userPrompt }],
-    maxTokens: HAIKU_MAX_TOKENS,
+    maxTokens,
     abortSignal: args.abortSignal,
     cacheSystem: true,
   };
@@ -189,6 +208,24 @@ export async function generatePerChunkSynopsis(
     return { kind: 'refusal', detail: `stop_reason=${result.stopReason}` };
   }
 
+  // #3883: stop_reason 'length' means the model hit maxTokens mid-sentence —
+  // the text is a truncated fragment, not a synopsis. Embedding it would bake
+  // the truncation artifact into the vector; classify as malformed so the
+  // service demotes the page to the title-only fall-back (same lane as an
+  // unparseable response), instead of silently embedding truncated text.
+  if (result.stopReason === 'length') {
+    const detail = `stop_reason=length (maxTokens=${maxTokens} exhausted; raise models.synopsis_max_tokens)`;
+    logSynopsisFailure({
+      pageSlug: args.pageSlug,
+      sourceId: args.sourceId,
+      chunkIndex: args.chunkIndex,
+      kind: 'malformed',
+      detail,
+      pageLevelFallback: true,
+    });
+    return { kind: 'malformed', detail };
+  }
+
   const synopsis = sanitizeSynopsis(result.text);
   if (!synopsis) {
     logSynopsisFailure({
@@ -202,10 +239,11 @@ export async function generatePerChunkSynopsis(
     return { kind: 'empty', detail: `length=${result.text.length}` };
   }
 
-  // No malformed detection in v0.40.3.0: synopses are plain text by
-  // prompt contract. Future extension could parse a JSON-shaped
-  // response with `{synopsis, confidence}` for richer signals; for now
-  // any non-empty text after sanitization counts as success.
+  // Content-shape malformed detection stays minimal: synopses are plain
+  // text by prompt contract, so any non-empty text after sanitization
+  // counts as success (truncation is caught structurally via the
+  // stop_reason==='length' check above, #3883). Future extension could
+  // parse a JSON-shaped response with `{synopsis, confidence}`.
 
   return { kind: 'success', synopsis };
 }

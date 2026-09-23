@@ -5,6 +5,11 @@ is a `source`: a logical brain-within-the-brain with its own slug
 namespace, its own sync state, and its own federation policy. The rest
 of this guide walks the three canonical scenarios.
 
+(Sources are the *within-one-database* axis. If you want to connect a
+whole separate database — a team-published brain with its own access
+policy — that's the *brain* axis: `gbrain mounts add`. See
+`docs/architecture/brains-and-sources.md` for the two-axis topology.)
+
 ## The three scenarios
 
 ### 1. Unified knowledge recall (wiki + gstack)
@@ -66,14 +71,14 @@ gbrain search "tech layoffs" --source yc-media,garrys-list
 ### 3. Mixed (wiki federated + sessions isolated)
 
 Your main wiki is federated with a few trusted sources. Your session
-transcripts (coming in v0.18) land in a separate isolated source so
-they don't dominate every search result.
+transcripts (`gbrain transcripts` ingests them) land in a separate
+isolated source so they don't dominate every search result.
 
 ```bash
 # Federated sources
 gbrain sources add gstack --path ~/.gstack --federated
 
-# Isolated source (future v0.18 — sessions use this shape today for ingest)
+# Isolated source for session transcripts
 gbrain sources add sessions --path ~/.claude/sessions --no-federated
 ```
 
@@ -91,7 +96,7 @@ first):
 6. The seeded `default` source.
 
 So inside `~/.gstack/plans/` on a brain that pinned `gstack` to
-`~/.gstack` via `.gbrain-source`, `gbrain put-page` implicitly writes to
+`~/.gstack` via `.gbrain-source`, `gbrain put` implicitly writes to
 the `gstack` source. Outside any registered directory with no env/dotfile
 set, it writes to the default.
 
@@ -104,14 +109,16 @@ Every source row stores `config.federated: boolean` in its JSONB config.
 | `true` | Source participates in unqualified `gbrain search "X"` results. |
 | `false` (default for new sources) | Source only searched when explicitly named via `--source <id>` or qualified citation. |
 
-The seeded `default` source is `federated=true` so pre-v0.17 brains
-behave exactly as before — every page appears in search.
+The seeded `default` source is `federated=true` so single-source brains
+behave as you'd expect — every page appears in search.
 
 Flip later with `gbrain sources federate <id>` / `unfederate <id>`.
 
 ## Commands
 
-Full subcommand reference:
+The most-used subcommands (run `gbrain sources --help` for the full,
+always-current reference — it also covers `status`, `current`,
+`set-cr-mode`, and the `push`/`pull` durability surface):
 
 ```
 gbrain sources add <id> --path <p> [--name <n>] [--federated|--no-federated] [--force]
@@ -119,9 +126,20 @@ gbrain sources add <id> --path <p> [--name <n>] [--federated|--no-federated] [--
                                --path must be a git repo (or a subdirectory of one) — see
                                "The git requirement for --path sources" below. --force
                                skips that check to register before git-init exists.
+gbrain sources add <id> --url <git-url> [--pat-file <p>] [--clone-dir <path>] [--no-harden]
+                               Clone + register a remote repo in one step; auto-hardens
+                               for durability when a PAT is provided (see "Durability" below).
 gbrain sources list [--json]   List all sources with page counts + federation state.
-gbrain sources remove <id> [--yes] [--dry-run] [--keep-storage]
-                               Cascade-delete a source (pages, chunks, timeline).
+gbrain sources archive <id>    Soft-delete: hide from search, keep data for a TTL
+                               grace window. Prefer this over `remove`.
+gbrain sources restore <id>    Un-archive. `gbrain sources archived` lists expiries;
+                               `gbrain sources purge` permanently deletes expired archives —
+                               except sources still referenced by a registered OAuth client
+                               (reported as `Blocked:`, sweep continues); revoke or rescope
+                               the client (`gbrain auth revoke-client <id>`) and re-run.
+gbrain sources remove <id> [--confirm-destructive] [--dry-run]
+                               Permanently cascade-delete a source (pages, chunks,
+                               timeline). Shows an impact preview first.
 gbrain sources rename <id> <new-name>
                                Change display name only; id is immutable.
 gbrain sources default <id>    Set the brain-level default.
@@ -156,7 +174,15 @@ Two details that are easy to miss:
   empty commit (`git commit --allow-empty`) — isn't enough. Registration
   checks for real tracked content (`git ls-tree HEAD` scoped to the path),
   not just a resolvable `HEAD`, so this footgun is caught immediately
-  instead of surfacing later as a sync that imports nothing.
+  instead of surfacing later as a sync that imports nothing. For files that
+  are deliberately untracked or `.gitignore`d but should still sync, use
+  `gbrain sync --include-gitignored` — it forces a full filesystem walk so
+  periodic syncs see ignored/untracked syncable content the git-object walk
+  skips (`gbrain import <dir> --include-gitignored` is the one-shot import
+  equivalent). Doctor's `multi_source_drift` advice names this case:
+  a slug stuck at `default` whose file is untracked won't be recreated by a
+  plain re-sync, so reach for the flag (or commit the file) before any
+  delete step.
 - **`--force` registers the source anyway**, skipping the check. Use this if
   you're registering a path before an automated pipeline gets around to
   `git init`-ing it. GBrain never auto-`git init`s a `--path` source for
@@ -188,16 +214,27 @@ citations keep working.
 
 ```bash
 # Pass --source explicitly
-gbrain put-page topics/ai ... --source wiki
+gbrain put topics/ai ... --source wiki
 
 # Or rely on the dotfile / env / CWD match
-cd ~/.gstack && gbrain put-page plans/multi-repo ...
+cd ~/.gstack && gbrain put plans/multi-repo ...
 # → source auto-resolves to gstack
 ```
 
 Reads span federated sources by default. Writes require a resolved
 source (explicit, inferred, or default). The resolver never picks a
 source silently when ambiguous — it errors with a clear fix.
+
+Unscoped writes are also guarded against landing in the wrong place. On a
+brain with at least one other source and more pages outside `default` than
+in it, an unscoped
+`gbrain sync` refuses (pass `--source <id>` to redirect it), `gbrain import`
+warns, and MCP stdio prints a once-per-process advisory when a write actually
+resolves to the default tier. `gbrain sync --dry-run` previews the run and
+prints the same routing guidance instead of refusing;
+`GBRAIN_ALLOW_DEFAULT_WRITE=1` is the escape hatch when `default` really is
+the intended target. **Say to your agent:** *"Show me what a sync would do
+without writing anything"* — your agent runs `gbrain sync --dry-run`.
 
 ## Durability: keep a brain repo in sync (auto-harden)
 
@@ -253,8 +290,8 @@ reachable only over a filesystem path, set `GBRAIN_GIT_ALLOW_FILE_TRANSPORT=1`
 
 ## Upgrading an existing brain
 
-`gbrain upgrade` runs the v16 + v17 migrations automatically. Your
-existing pages all move under `source_id='default'`. Behavior is
+`gbrain upgrade` runs the needed schema migrations automatically. Your
+existing pages all live under `source_id='default'`. Behavior is
 unchanged until you add a second source.
 
 To add one:
@@ -266,13 +303,13 @@ cd ~/.gstack && gbrain sources attach gstack && gbrain sync
 
 Two commands. The existing default source is untouched.
 
-## Not in v0.18.0
+## Related features that build on sources
 
-- Session transcript ingest (`.jsonl`, raised size cap, session
-  PageType) — v0.18.
-- Per-source retention/TTL (`gbrain sources prune`) — v0.18.
-- ACL enforcement via caller-identity — v0.17.1.
-- `gbrain sources import-from-github <url>` one-shot bootstrap — patch
-  release after the core plumbing stabilizes.
-
-All of these build on the `sources` primitive shipped here.
+- **Session transcript ingest** — `gbrain transcripts` (server-private:
+  raw chat exports stay on the host machine).
+- **Per-source retention** — `gbrain sources archive` / `archived` /
+  `purge` (soft-delete with a TTL grace window).
+- **One-shot remote bootstrap** — `gbrain sources add <id> --url <git-url>`
+  (clone + register + auto-harden).
+- **Access control across brains** — the *brain* axis (`gbrain mounts`);
+  see `docs/architecture/brains-and-sources.md`.

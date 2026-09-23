@@ -252,9 +252,11 @@ export interface BrainstormResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-profile cost estimate. brainstorm: ~$0.05-0.15. lsd: ~$0.20-0.40.
- * Real numbers depend on configured model; we anchor on Sonnet pricing.
- * The estimate is informational — operators see actuals printed at run-end.
+ * Per-profile cost estimate. At Sonnet pricing ($3/M in, $15/M out — the
+ * gateway fallback), this formula yields brainstorm ~$0.8 and lsd ~$1.0;
+ * it scales linearly with the configured chat model's pricing (a Haiku 4.5
+ * chat_model at $1/$5 lands exactly 3x lower). The estimate is
+ * informational — operators see actuals printed at run-end.
  */
 export function estimateCost(profile: BrainstormProfile, model: string): number {
   const crosses = profile.k_close * profile.m_far;
@@ -574,7 +576,15 @@ async function _runBrainstormInner(
   const embedFn = opts.embedQueryFn ?? embedQuery;
 
   // ---- Phase 0: cost preview + TTY grace ----
-  const modelStr = resolveBrainstormChatModel(config, opts.modelOverride);
+  // FLEET FORK PATCH (2026-08-03, re-applied on v0.48.2.0 2026-09-04): default
+  // brainstorm/LSD model → fable-5-1 via the claude-apr relay (:18810), unless
+  // overridden. Upstream's resolveBrainstormChatModel(config, override) now owns
+  // precedence (explicit override → config.chat_model → sonnet default); we only
+  // insert the GBRAIN_BRAINSTORM_MODEL env override BELOW an explicit --model and
+  // ABOVE the config/upstream default, preserving upstream behavior when unset.
+  const modelStr = opts.modelOverride
+    ?? process.env.GBRAIN_BRAINSTORM_MODEL
+    ?? resolveBrainstormChatModel(config, undefined);
   const { aborted, estimate } = await previewCostAndWait({
     profile,
     model: modelStr,
@@ -782,7 +792,9 @@ async function _runBrainstormInner(
       far: cross.far,
     });
     const chatOpts: ChatOpts = {
-      model: opts.modelOverride,
+      // FLEET FORK PATCH (2026-08-03): use the resolved modelStr (override → env → fable-5
+      // default) instead of raw opts.modelOverride, which left undefined → gateway sonnet default.
+      model: modelStr,
       system,
       messages: [{ role: 'user', content: user }],
       maxTokens: 1500,
@@ -883,7 +895,10 @@ async function _runBrainstormInner(
       far_slug: i.far_slug,
     }));
     const judgeResult = await runJudge(profile.judge_config, judgeInput, {
-      modelOverride: (await resolveBrainstormJudgeModel(engine, opts.judgeModel)) ?? opts.modelOverride,
+      // FLEET FORK PATCH: fall back to the RESOLVED modelStr (override → env →
+      // config/default) instead of raw opts.modelOverride, which left undefined →
+      // gateway sonnet default for the judge phase.
+      modelOverride: (await resolveBrainstormJudgeModel(engine, opts.judgeModel)) ?? modelStr,
       chatFn: opts.chatFn,
       activeBiasTags: activeBiasTags ?? undefined,
       abortSignal: opts.abortSignal,
