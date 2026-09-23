@@ -17,6 +17,7 @@
         "DATABASE_URL",
         "DEEPGRAM_API_KEY",
         "DEEPSEEK_API_KEY",
+        "GBRAIN_ANTHROPIC_EFFORT",
         "GBRAIN_BIN",
         "GBRAIN_BRAIN_ID",
         "GBRAIN_CHAT_FALLBACK_CHAIN",

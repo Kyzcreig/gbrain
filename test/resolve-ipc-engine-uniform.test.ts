@@ -33,7 +33,11 @@ const URL_B = 'postgresql://user:hunter2@db.example.com:5432/brain_b';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(join(tmpdir(), 'gbrain-ipc-uniform-'));
+  // Short prefix on purpose: the run-dir socket is <tmp>/run/resolve-<12hex>.sock
+  // and macOS caps sun_path at 104 bytes (Linux: 108). With the default
+  // /var/folders/... tmpdir, 'gbrain-ipc-uniform-' landed on exactly 104 and
+  // listen() failed with ENAMETOOLONG -> startResolveIpcServer returned null.
+  tmp = mkdtempSync(join(tmpdir(), 'gb-ipc-'));
 });
 
 afterEach(() => {
