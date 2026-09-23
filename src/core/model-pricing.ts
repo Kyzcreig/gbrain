@@ -90,6 +90,7 @@ export const CANONICAL_PRICING: Record<string, ModelPricing> = {
   // Priced at fable-5 parity for NOTIONAL cost reporting only.
   'anthropic:claude-fable-5-1':           anthro(10.00, 50.00),
   'anthropic:claude-fable-5':             anthro(10.00, 50.00),
+  'anthropic:claude-opus-5-5':            anthro( 4.00, 20.00),
   // Opus 4.x/5: $5 in / $25 out. Opus 5 (new generation) shares the same
   // per-token rate as 4.8 (released 2026-05-28) — closes gbrain#1819.
   'anthropic:claude-opus-5':              anthro( 5.00, 25.00),
