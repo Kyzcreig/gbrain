@@ -20,8 +20,31 @@ import {
   ANTHROPIC_CACHE_WRITE_5M_MULT,
 } from '../src/core/model-pricing.ts';
 import { ANTHROPIC_PRICING } from '../src/core/anthropic-pricing.ts';
-import { MODEL_PRICING } from '../src/core/takes-quality-eval/pricing.ts';
+import { MODEL_PRICING, getPricing } from '../src/core/takes-quality-eval/pricing.ts';
+import { anthropic } from '../src/core/ai/recipes/anthropic.ts';
+import { claudeCli } from '../src/core/ai/recipes/claude-cli.ts';
+import { ANTHROPIC_OUTPUT_CAPS } from '../src/core/brainstorm/judges.ts';
 import { estimateAnthropicCost } from '../src/core/brain-score-recommendations.ts';
+
+test('Opus 5.5 is priceable and available in both chat recipes without removing Opus 5', () => {
+  expect(canonicalLookup('claude-opus-5-5')).toMatchObject({
+    input: 4,
+    output: 20,
+    cache_read: 0.4,
+    cache_write: 5,
+  });
+  expect(getPricing('anthropic:claude-opus-5-5')).toEqual({
+    input_per_1m: 4,
+    output_per_1m: 20,
+  });
+  for (const recipe of [anthropic, claudeCli]) {
+    expect(recipe.touchpoints.chat?.models).toContain('claude-opus-5-5');
+    expect(recipe.touchpoints.chat?.models).toContain('claude-opus-5');
+  }
+  expect(anthropic.touchpoints.chat?.model_context_tokens?.['claude-opus-5-5']).toBe(1_000_000);
+  expect(ANTHROPIC_OUTPUT_CAPS['claude-opus-5-5']).toBe(32_000);
+  expect(CANONICAL_PRICING['anthropic:claude-opus-5']).toMatchObject({ input: 5, output: 25 });
+});
 
 describe('CANONICAL_PRICING — table integrity', () => {
   test('every entry has finite positive rates and a provider-prefixed key', () => {

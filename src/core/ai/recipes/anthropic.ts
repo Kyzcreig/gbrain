@@ -24,6 +24,7 @@ export const anthropic: Recipe = {
     chat: {
       models: [
         'claude-fable-5',
+        'claude-opus-5-5',
         'claude-opus-5',
         'claude-opus-4-8',
         // FLEET FORK PATCH (2026-08-03, re-applied on v0.48.2.0 2026-09-04):
@@ -45,6 +46,7 @@ export const anthropic: Recipe = {
         // src/core/cycle/synthesize.ts MODEL_CONTEXT_TOKENS (deleted upstream).
         'claude-fable-5-1': 1_000_000,
         'claude-fable-5': 1_000_000,
+        'claude-opus-5-5': 1_000_000,
         'claude-opus-5': 1_000_000,
         'claude-sonnet-5': 1_000_000,
         'claude-opus-4-8': 1_000_000,
