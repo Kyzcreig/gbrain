@@ -9,6 +9,9 @@
  */
 
 import type { Operation, OperationContext } from './contract.ts';
+import { OperationError } from './contract.ts';
+import { importFromContent } from '../import-file.ts';
+import { serializePageToMarkdown } from '../markdown.ts';
 import { enforceClientSlugFence, sourceScopeOpts } from './context.ts';
 import { stripTakesFence } from '../takes-fence.ts';
 import { slugHiddenFromCaller } from '../search/private-visibility.ts';
@@ -195,9 +198,47 @@ const revert_version: Operation = {
     // intended page row instead of whichever same-slug row Postgres returns
     // first.
     const sourceOpts = ctx.sourceId ? { sourceId: ctx.sourceId } : {};
-    await ctx.engine.createVersion(p.slug as string, sourceOpts);
-    await ctx.engine.revertToVersion(p.slug as string, p.version_id as number, sourceOpts);
-    return { status: 'reverted' };
+    const slug = p.slug as string;
+    // Re-publish the version through the import path so content_chunks (and
+    // embeddings) track the restored body. The bare engine.revertToVersion
+    // UPDATE rewrote compiled_truth but left the reverted-away chunks live,
+    // so search kept matching text the page no longer contained. Mirrors
+    // upstream v0.51+ (persistence/page-prepare.ts: forceRechunk on revert).
+    const page = await ctx.engine.getPage(slug, sourceOpts);
+    if (!page) throw new OperationError('page_not_found', `Page not found: ${slug}`);
+    const version = (await ctx.engine.getVersions(slug, sourceOpts))
+      .find(v => Number(v.id) === Number(p.version_id));
+    if (!version) {
+      throw new OperationError('not_found', `Version ${p.version_id} not found for page ${slug}.`,
+        'Pass an id returned by get_versions for this page.');
+    }
+    const tags = await ctx.engine.getTags(slug, sourceOpts);
+    // page_versions snapshots body, frontmatter and title only; timeline,
+    // type and tags stay as they are now (same as the old UPDATE).
+    const content = serializePageToMarkdown({
+      ...page,
+      compiled_truth: version.compiled_truth,
+      frontmatter: version.frontmatter,
+      ...(version.title !== null && version.title !== undefined ? { title: version.title } : {}),
+    }, tags);
+    // Same embed decision as put_page: embed inline when a provider is
+    // configured, otherwise chunks land embedding IS NULL for the standing
+    // embed backfill (embed --stale) to pick up.
+    const { isAvailable } = await import('../ai/gateway.ts');
+    const noEmbed = ctx.deferEmbeds === true || !isAvailable('embedding');
+    // importFromContent snapshots the pre-revert row itself (tx.createVersion)
+    // before writing, so the revert stays undoable without a second snapshot.
+    const result = await importFromContent(ctx.engine, slug, content, {
+      noEmbed,
+      forceRechunk: true,
+      allowEmptyOverwrite: true,
+      remote: ctx.remote !== false,
+      ...sourceOpts,
+    });
+    if (result.status === 'error') {
+      throw new OperationError('invalid_params', `revert_version: ${result.error ?? 'the version could not be re-imported'}`);
+    }
+    return { status: 'reverted', chunks: result.chunks };
   },
   cliHints: { name: 'revert', positional: ['slug', 'version_id'] },
 };
