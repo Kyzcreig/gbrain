@@ -14,7 +14,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { createHash } from 'crypto';
-import { hasDatabase } from './helpers.ts';
+import { hasDatabase, setupDB, teardownDB } from './helpers.ts';
 import { assertSafeE2eDatabaseUrl } from '../helpers/db-guard.ts';
 
 const skip = !hasDatabase();
@@ -44,6 +44,14 @@ describeE2E('serve-http OAuth 2.1 E2E (v0.26.1 + v0.26.2 + v0.26.3)', () => {
 
   beforeAll(async () => {
     const { execSync, spawn } = await import('child_process');
+
+    // Self-contained schema: run baseline + MIGRATIONS like every sibling
+    // serve-http E2E file. Without this the file only passed when an earlier
+    // file in the same run had initialized the DB; run alone (the diff-relevant
+    // "Selected E2E" lane, fresh container) register-client died with
+    // `relation "oauth_clients" does not exist`.
+    await setupDB();
+    await teardownDB();
 
     // Register a test OAuth client via CLI.
     // env: { ...process.env } is required: bun's execSync does NOT inherit
@@ -940,17 +948,24 @@ describeE2E('serve-http OAuth 2.1 E2E (v0.26.1 + v0.26.2 + v0.26.3)', () => {
       });
       expect(tokenRes.ok).toBe(true);
       const { access_token } = await tokenRes.json() as any;
+      // Drain every /mcp body before querying. The SDK's stateless transport
+      // returns the SSE Response (status + headers) as soon as the request is
+      // dispatched — BEFORE the handler runs — so `await fetch()` alone does
+      // not order the test after the handler's request-log INSERT. The body
+      // only completes once the handler returns, and every handler awaits its
+      // INSERT before returning, so a drained body is a deterministic barrier.
+      // (The fixed 250ms sleep this replaces raced the INSERT on loaded CI
+      // runners: 1 of 2 rows, scheduled run 35990899714.)
       const okRes = await mcpCall(access_token, 'tools/list');
       expect(okRes.status).not.toBe(401);
+      await okRes.text();
 
       // Trigger an error path so the error_message column gets a value too.
       // Request a tool that doesn't exist — v0.28.10 logs unknown-op attempts
       // with operation = the attempted name and error_message starting with
       // 'unknown_operation:'.
-      await mcpCall(access_token, 'tools/call', { name: 'this_tool_does_not_exist', arguments: {} });
-
-      // Allow async best-effort INSERT to flush.
-      await new Promise(r => setTimeout(r, 250));
+      const errRes = await mcpCall(access_token, 'tools/call', { name: 'this_tool_does_not_exist', arguments: {} });
+      await errRes.text();
 
       const rows = await sql`
         SELECT operation, status, agent_name, params, error_message
@@ -1158,8 +1173,9 @@ describeE2E('serve-http OAuth 2.1 E2E (v0.26.1 + v0.26.2 + v0.26.3)', () => {
         body: `grant_type=client_credentials&client_id=${clientId!}&client_secret=${clientSecret!}&scope=read`,
       });
       const { access_token } = await tokenRes.json() as any;
-      await mcpCall(access_token, 'tools/list');
-      await new Promise(r => setTimeout(r, 250));
+      // Drained body = handler (and its awaited request-log INSERT) finished;
+      // see the v0.26.3 persistence test above for why a sleep is not enough.
+      await (await mcpCall(access_token, 'tools/list')).text();
 
       const oauthRows = await sql`
         SELECT agent_name FROM mcp_request_log
