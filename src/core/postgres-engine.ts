@@ -4832,8 +4832,8 @@ export class PostgresEngine implements BrainEngine {
     const sql = this.sql;
     const sourceId = opts?.sourceId ?? 'default';
     const rows = await sql`
-      INSERT INTO page_versions (page_id, compiled_truth, frontmatter)
-      SELECT id, compiled_truth, frontmatter
+      INSERT INTO page_versions (page_id, compiled_truth, frontmatter, title)
+      SELECT id, compiled_truth, frontmatter, title
       FROM pages WHERE slug = ${slug} AND source_id = ${sourceId}
       RETURNING *
     `;
@@ -4883,7 +4883,7 @@ export class PostgresEngine implements BrainEngine {
       await sql`
         UPDATE pages SET
           compiled_truth = pv.compiled_truth,
-          frontmatter = pv.frontmatter,
+          frontmatter = pv.frontmatter, title = COALESCE(pv.title, pages.title),
           updated_at = now()
         FROM page_versions pv
         WHERE pages.slug = ${slug} AND pages.source_id = ${opts.sourceId}
@@ -4894,7 +4894,7 @@ export class PostgresEngine implements BrainEngine {
     await sql`
       UPDATE pages SET
         compiled_truth = pv.compiled_truth,
-        frontmatter = pv.frontmatter,
+        frontmatter = pv.frontmatter, title = COALESCE(pv.title, pages.title),
         updated_at = now()
       FROM page_versions pv
       WHERE pages.slug = ${slug} AND pv.id = ${versionId} AND pv.page_id = pages.id

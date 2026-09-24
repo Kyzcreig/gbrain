@@ -496,6 +496,12 @@ describeE2E('E2E: Versions', () => {
     const engine = getEngine();
     await importFromContent(engine, 'people/sarah-chen', modified, { noEmbed: true });
 
+    // The fixture edit changes the frontmatter title only; prove it landed so
+    // the post-revert assertion below is not vacuous.
+    const edited = await callOp('get_page', { slug: 'people/sarah-chen' }) as any;
+    expect(original.title).toBe('Sarah Chen');
+    expect(edited.title).toBe('Sarah Chen (Modified)');
+
     // Check versions exist
     const versions = await callOp('get_versions', { slug: 'people/sarah-chen' }) as any[];
     expect(versions.length).toBeGreaterThanOrEqual(1);
@@ -506,6 +512,7 @@ describeE2E('E2E: Versions', () => {
 
     const reverted = await callOp('get_page', { slug: 'people/sarah-chen' }) as any;
     expect(reverted.compiled_truth).not.toContain('(Modified)');
+    expect(reverted.title).toBe(original.title);
   }, 30_000);
 });
 
