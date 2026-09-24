@@ -14,7 +14,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { createHash } from 'crypto';
-import { hasDatabase } from './helpers.ts';
+import { hasDatabase, setupDB, teardownDB } from './helpers.ts';
 import { assertSafeE2eDatabaseUrl } from '../helpers/db-guard.ts';
 
 const skip = !hasDatabase();
@@ -44,6 +44,14 @@ describeE2E('serve-http OAuth 2.1 E2E (v0.26.1 + v0.26.2 + v0.26.3)', () => {
 
   beforeAll(async () => {
     const { execSync, spawn } = await import('child_process');
+
+    // Self-contained schema: run baseline + MIGRATIONS like every sibling
+    // serve-http E2E file. Without this the file only passed when an earlier
+    // file in the same run had initialized the DB; run alone (the diff-relevant
+    // "Selected E2E" lane, fresh container) register-client died with
+    // `relation "oauth_clients" does not exist`.
+    await setupDB();
+    await teardownDB();
 
     // Register a test OAuth client via CLI.
     // env: { ...process.env } is required: bun's execSync does NOT inherit
