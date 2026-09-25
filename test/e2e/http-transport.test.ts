@@ -24,6 +24,8 @@ if (skip) {
 interface ServerHandle {
   port: number;
   stop: () => Promise<void>;
+  /** Wait for the transport's not-awaited last_used_at UPDATE + mcp_request_log INSERT. */
+  settleBackgroundWrites: () => Promise<void>;
 }
 
 function generateToken(): string {
@@ -40,7 +42,25 @@ async function startServer(): Promise<ServerHandle> {
   return {
     port: (server as any).port,
     stop: async () => { (server as any).stop(true); },
+    settleBackgroundWrites: () => server.settleBackgroundWrites(),
   };
+}
+
+/**
+ * POST one tools/list, drain the body, then wait for the background writes the
+ * handler issued. The handler returns its Response only after it has issued the
+ * (not-awaited) last_used_at UPDATE and mcp_request_log INSERT, so once fetch()
+ * resolves both writes are tracked, and settling them is a deterministic barrier
+ * — no sleep, no load race.
+ */
+async function toolsListAndSettle(srv: ServerHandle, token: string): Promise<void> {
+  const r = await fetch(`http://localhost:${srv.port}/mcp`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: rpc('tools/list'),
+  });
+  await r.arrayBuffer();
+  await srv.settleBackgroundWrites();
 }
 
 function rpc(method: string, params?: unknown, id: number = 1) {
@@ -153,14 +173,8 @@ describeE2E('http-transport E2E (real Postgres)', () => {
     // Reset last_used_at to NULL so the first call definitely updates
     await conn.unsafe('UPDATE access_tokens SET last_used_at = NULL WHERE name = $1', [validTokenName]);
 
-    // First request — should update last_used_at
-    await fetch(`http://localhost:${srv.port}/mcp`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${validToken}`, 'Content-Type': 'application/json' },
-      body: rpc('tools/list'),
-    });
-    // Give the fire-and-forget UPDATE a moment to land
-    await new Promise(r => setTimeout(r, 50));
+    // First request — should update last_used_at (settle the fire-and-forget UPDATE)
+    await toolsListAndSettle(srv, validToken);
 
     const [row1] = await conn.unsafe(
       'SELECT last_used_at FROM access_tokens WHERE name = $1',
@@ -169,13 +183,10 @@ describeE2E('http-transport E2E (real Postgres)', () => {
     expect(row1.last_used_at).not.toBeNull();
     const firstUpdate = row1.last_used_at;
 
-    // Second request immediately — should NOT trigger another UPDATE (debounced by SQL WHERE)
-    await fetch(`http://localhost:${srv.port}/mcp`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${validToken}`, 'Content-Type': 'application/json' },
-      body: rpc('tools/list'),
-    });
-    await new Promise(r => setTimeout(r, 50));
+    // Second request immediately — should NOT trigger another UPDATE (debounced by SQL WHERE).
+    // Settling means the second UPDATE has actually executed (as a no-op), so an
+    // unchanged timestamp below proves the debounce, not that the write was late.
+    await toolsListAndSettle(srv, validToken);
 
     const [row2] = await conn.unsafe(
       'SELECT last_used_at FROM access_tokens WHERE name = $1',
@@ -198,12 +209,7 @@ describeE2E('http-transport E2E (real Postgres)', () => {
       [validTokenName],
     ) as { last_used_at: Date | null }[];
 
-    await fetch(`http://localhost:${srv.port}/mcp`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${validToken}`, 'Content-Type': 'application/json' },
-      body: rpc('tools/list'),
-    });
-    await new Promise(r => setTimeout(r, 50));
+    await toolsListAndSettle(srv, validToken);
 
     const [after] = await conn.unsafe(
       'SELECT last_used_at FROM access_tokens WHERE name = $1',
@@ -217,13 +223,8 @@ describeE2E('http-transport E2E (real Postgres)', () => {
     const beforeRows = await conn.unsafe('SELECT count(*)::int AS n FROM mcp_request_log') as { n: number }[];
     const beforeN = beforeRows[0].n;
 
-    await fetch(`http://localhost:${srv.port}/mcp`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${validToken}`, 'Content-Type': 'application/json' },
-      body: rpc('tools/list'),
-    });
-    // Fire-and-forget audit insert — give it a tick
-    await new Promise(r => setTimeout(r, 100));
+    // Fire-and-forget audit insert — settle it instead of sleeping
+    await toolsListAndSettle(srv, validToken);
 
     const afterRows = await conn.unsafe('SELECT count(*)::int AS n FROM mcp_request_log') as { n: number }[];
     expect(afterRows[0].n).toBeGreaterThan(beforeN);
