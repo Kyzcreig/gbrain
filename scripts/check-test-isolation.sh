@@ -18,6 +18,14 @@
 #  R4: any file that creates `new PGLiteEngine(` must call `.disconnect(`
 #      inside an `afterAll(` block. Without disconnect, engines leak across
 #      file boundaries within a shard process.
+#  R5: any file that calls `configureGateway(` must restore the gateway
+#      inside an `afterAll(`/`afterEach(` hook body (`resetGateway()` back to
+#      the preload baseline, or an explicit `configureGateway(...)`). The
+#      gateway is process-global and the NEXT file's `beforeAll` runs before
+#      the preload's per-test `beforeEach` can repair it, so a leaked
+#      embedding shape sizes the next file's PGLite vector schema wrong
+#      ("expected 1280 dimensions, not 1536"). Which file pairs collide
+#      depends on shard bin-packing, so adding any file reshuffles the mines.
 #
 # Scope:
 #  - Recursively scans `test/**/*.test.ts`.
@@ -140,6 +148,37 @@ while IFS= read -r f; do
       emit_violation "$f" "R4" "creates PGLiteEngine but missing afterAll(() => engine.disconnect()); engine leaks across files in the shard process" ""
     fi
   fi
+
+  # R5: configureGateway() requires a restoring afterAll/afterEach hook.
+  # Comment lines are ignored; the hook body is tracked by paren/brace depth
+  # from the `afterAll(` / `afterEach(` token to its matching close.
+  if grep -vE '^[[:space:]]*(//|\*|/\*)' "$f" 2>/dev/null | grep -qE '(^|[^A-Za-z0-9_])configureGateway[[:space:]]*\('; then
+    restores=$(awk '
+      BEGIN { inhook = 0; ok = 0 }
+      /^[[:space:]]*(\/\/|\*|\/\*)/ { next }
+      {
+        line = $0
+        if (!inhook && match(line, /(afterAll|afterEach)[[:space:]]*\(/)) {
+          inhook = 1; depth = 0; opened = 0
+          line = substr(line, RSTART)
+        }
+        if (inhook) {
+          if (line ~ /(resetGateway|configureGateway)[[:space:]]*\(/) { ok = 1; exit }
+          n = length(line)
+          for (i = 1; i <= n; i++) {
+            c = substr(line, i, 1)
+            if (c == "(" || c == "{") { depth++; opened = 1 }
+            else if (c == ")" || c == "}") { depth-- }
+          }
+          if (opened && depth <= 0) inhook = 0
+        }
+      }
+      END { print ok }
+    ' "$f" 2>/dev/null)
+    if [ "$restores" != "1" ]; then
+      emit_violation "$f" "R5" "calls configureGateway() but no afterAll/afterEach restores it (add afterAll(() => resetGateway())); the gateway shape leaks into the next file's beforeAll in the shard process" ""
+    fi
+  fi
 done <<EOF
 $FILE_LIST
 EOF
@@ -153,6 +192,7 @@ if [ $violations -gt 0 ]; then
   echo "  - For mock.module(), rename to *.serial.test.ts (quarantine)"
   echo "  - For PGLiteEngine, follow the canonical pattern in"
   echo "    test/helpers/reset-pglite.ts JSDoc and CLAUDE.md."
+  echo "  - For configureGateway(), add afterAll(() => resetGateway())"
   echo
   echo "Or, if this is a baseline file from before the lint shipped,"
   echo "add it to scripts/check-test-isolation.allowlist (with a TODO"

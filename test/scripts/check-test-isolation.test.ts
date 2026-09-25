@@ -149,6 +149,63 @@ describe('check-test-isolation.sh', () => {
     });
   });
 
+  describe('R5 — configureGateway() without a restoring hook', () => {
+    const IMPORTS = `import { test, afterAll, afterEach } from 'bun:test';\nimport { configureGateway, resetGateway } from '../src/core/ai/gateway.ts';\n`;
+
+    it('flags configureGateway() with no afterAll/afterEach restore', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-leak.test.ts',
+          contents: IMPORTS + `test('x', () => { configureGateway({ embedding_model: 'litellm:e', env: {} }); });\n`,
+        },
+      ]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('R5');
+      expect(r.stdout).toContain('gw-leak.test.ts');
+    });
+
+    it('flags when resetGateway() is only called inside a test body, not a hook', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-intest.test.ts',
+          contents: IMPORTS + `afterAll(() => {\n  cleanupSomethingElse();\n});\ntest('x', () => {\n  configureGateway({ env: {} });\n  resetGateway();\n});\n`,
+        },
+      ]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('R5');
+    });
+
+    it('does NOT flag afterAll(() => resetGateway())', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-ok.test.ts',
+          contents: IMPORTS + `test('x', () => { configureGateway({ env: {} }); });\nafterAll(() => {\n  resetGateway();\n});\n`,
+        },
+      ]);
+      expect(r.status).toBe(0);
+    });
+
+    it('does NOT flag an afterEach that restores via explicit configureGateway()', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-ok-each.test.ts',
+          contents: IMPORTS + `afterEach(() => {\n  configureGateway({ embedding_model: 'openai:text-embedding-3-large', embedding_dimensions: 1536, env: {} });\n});\ntest('x', () => { configureGateway({ env: {} }); });\n`,
+        },
+      ]);
+      expect(r.status).toBe(0);
+    });
+
+    it('does NOT flag a configureGateway() mention in a comment', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-comment.test.ts',
+          contents: `// configureGateway() pushes the key (push seam)\nimport { test } from 'bun:test';\ntest('x', () => {});\n`,
+        },
+      ]);
+      expect(r.status).toBe(0);
+    });
+  });
+
   describe('R3 — new PGLiteEngine() outside beforeAll context', () => {
     it('flags engine created at module top-level', () => {
       const r = runLintIn([

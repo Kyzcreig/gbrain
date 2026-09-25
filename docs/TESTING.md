@@ -338,6 +338,7 @@ The cross-file flake class is enforced statically by `scripts/check-test-isolati
 | **R2** | `mock.module(...)` anywhere in the file | Rename file to `*.serial.test.ts` (no DI on production code for testability) |
 | **R3** | `new PGLiteEngine(` outside ~50 lines after a `beforeAll(` line | Use the canonical block (below) inside `beforeAll(` |
 | **R4** | Files creating `new PGLiteEngine(` without `engine.disconnect(` inside an `afterAll(` block | Add `afterAll(() => engine.disconnect())` |
+| **R5** | Files calling `configureGateway(` without an `afterAll(`/`afterEach(` hook that restores the gateway (`resetGateway()` or an explicit `configureGateway(...)`) | Add `afterAll(() => resetGateway())`. The gateway is process-global and the next file's `beforeAll` runs before the preload's per-test `beforeEach` can repair it, so a leaked embedding shape sizes that file's PGLite vector schema wrong (`expected 1280 dimensions, not 1536`) |
 
 Files that violated these rules at the isolation-lint baseline are listed in `scripts/check-test-isolation.allowlist`. **The allow-list MUST shrink over time** — never add new entries.
 

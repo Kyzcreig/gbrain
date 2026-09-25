@@ -16,7 +16,7 @@
  * `generateText` import via Bun's module-replace pattern.
  */
 
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, mock, afterAll } from 'bun:test';
 import {
   configureGateway,
   resetGateway,
@@ -612,4 +612,13 @@ describe('chat — typed provider error status carried to the top level', () => 
     // The original typed error stays reachable as the cause.
     expect(err.cause).toBeInstanceOf(ClaudeCliProcessError);
   });
+});
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. Restore the preload baseline (OpenAI/1536) when the
+// file finishes, so the NEXT file sharing this shard process doesn't inherit
+// this file's embedding shape in its beforeAll (which runs before the preload's
+// per-test beforeEach can repair it) and build a mis-sized vector schema.
+afterAll(() => {
+  resetGateway();
 });

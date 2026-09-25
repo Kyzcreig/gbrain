@@ -29,6 +29,7 @@ import { parseLegacyQrels, seedCanaryCorpus } from '../scripts/run-eval-canary.t
 import { runCorrectnessGate, type CorrectnessGateOpts } from '../src/core/bench/correctness-gate.ts';
 import { parseQrelsFile, DEFAULT_QRELS_THRESHOLDS } from '../src/core/bench/qrels-file.ts';
 import { hybridSearch } from '../src/core/search/hybrid.ts';
+import { resetGateway } from '../src/core/ai/gateway.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const QRELS_PATH = join(ROOT, 'test', 'fixtures', 'eval-baselines', 'qrels-search.json');
@@ -103,6 +104,14 @@ describe('correctness gate through the queryEmbedFn seam', () => {
   let engine: PGLiteEngine;
 
   beforeAll(async () => {
+    // The schema's vector(N) width and the chunk model tag are read from the
+    // process-global gateway at initSchema() time, and basisEmbedding() emits
+    // 1536-d vectors. This beforeAll runs before the preload's per-test
+    // beforeEach, so a prior file in the same shard process that left the
+    // gateway on another shape (e.g. litellm/1280) would size the schema wrong
+    // ("expected 1280 dimensions, not 1536"). Own the shape explicitly: reset
+    // to the preload baseline (OpenAI/1536) before building the engine.
+    resetGateway();
     engine = new PGLiteEngine();
     await engine.connect({});
     await engine.initSchema();

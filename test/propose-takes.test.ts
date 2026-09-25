@@ -14,7 +14,7 @@
  *  - parseExtractorOutput unit tests for the raw JSON parser
  */
 
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, afterAll } from 'bun:test';
 import { withEnv, emptyHome } from './helpers/with-env.ts';
 import {
   runPhaseProposeTakes,
@@ -1096,4 +1096,13 @@ describe('cycle.propose_takes.enabled gate (#4102)', () => {
     expect(result.status).not.toBe('skipped');
     expect(calls()).toBe(1);
   });
+});
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. Restore the preload baseline (OpenAI/1536) when the
+// file finishes, so the NEXT file sharing this shard process doesn't inherit
+// this file's embedding shape in its beforeAll (which runs before the preload's
+// per-test beforeEach can repair it) and build a mis-sized vector schema.
+afterAll(() => {
+  resetGateway();
 });

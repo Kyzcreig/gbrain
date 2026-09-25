@@ -1,11 +1,11 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, afterAll } from 'bun:test';
 import { versionRoot, maybeAttachVersionSuffixHint } from '../src/core/ai/base-url-probe.ts';
 import {
   probeModel,
   probeEmbeddingReachability,
   probeRerankerReachability,
 } from '../src/commands/models.ts';
-import { configureGateway } from '../src/core/ai/gateway.ts';
+import { configureGateway, resetGateway } from '../src/core/ai/gateway.ts';
 import type { AIGatewayConfig } from '../src/core/ai/types.ts';
 
 /**
@@ -343,4 +343,13 @@ describe('probe-site wiring (discrimination — fails if a hint call is reverted
     expect(r?.status).toBe('auth');
     expect(r?.fix).toContain('/v1');
   });
+});
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. Restore the preload baseline (OpenAI/1536) when the
+// file finishes, so the NEXT file sharing this shard process doesn't inherit
+// this file's embedding shape in its beforeAll (which runs before the preload's
+// per-test beforeEach can repair it) and build a mis-sized vector schema.
+afterAll(() => {
+  resetGateway();
 });

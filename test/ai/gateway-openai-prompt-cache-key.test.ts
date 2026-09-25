@@ -16,7 +16,7 @@
  *     nothing), and config `provider_chat_options` overrides the derived key
  */
 
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
 import {
   chat,
   configureGateway,
@@ -120,4 +120,13 @@ describe('chat() wiring — prompt_cache_key per provider', () => {
     );
     expect(providerOptions?.openai?.promptCacheKey).toBe('session-42');
   });
+});
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. Restore the preload baseline (OpenAI/1536) when the
+// file finishes, so the NEXT file sharing this shard process doesn't inherit
+// this file's embedding shape in its beforeAll (which runs before the preload's
+// per-test beforeEach can repair it) and build a mis-sized vector schema.
+afterAll(() => {
+  resetGateway();
 });

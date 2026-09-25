@@ -12,7 +12,8 @@
  *  - budget exhausted → status='warn', no row written
  */
 
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, afterAll } from 'bun:test';
+import { resetGateway } from '../src/core/ai/gateway.ts';
 import {
   runPhaseCalibrationProfile,
   parsePatternStatementsOutput,
@@ -384,4 +385,13 @@ describe('generator model follows the gateway chat model', () => {
       resetGateway();
     }
   });
+});
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. Restore the preload baseline (OpenAI/1536) when the
+// file finishes, so the NEXT file sharing this shard process doesn't inherit
+// this file's embedding shape in its beforeAll (which runs before the preload's
+// per-test beforeEach can repair it) and build a mis-sized vector schema.
+afterAll(() => {
+  resetGateway();
 });

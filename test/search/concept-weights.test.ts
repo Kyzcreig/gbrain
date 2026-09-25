@@ -21,7 +21,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { PGLiteEngine } from '../../src/core/pglite-engine.ts';
-import { configureGateway } from '../../src/core/ai/gateway.ts';
+import { configureGateway, resetGateway } from '../../src/core/ai/gateway.ts';
 import { hybridSearch } from '../../src/core/search/hybrid.ts';
 import { classifyQueryIntent } from '../../src/core/search/query-intent.ts';
 import { basisEmbedding } from '../../src/eval/deterministic-embed.ts';
@@ -130,4 +130,13 @@ describe('concept-intent weights (Cat 13)', () => {
     const concept = on.find((r) => r.slug === 'concepts/durable-moat-example');
     expect(concept?.cosine).toBeCloseTo(1.0, 5);
   });
+});
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. Restore the preload baseline (OpenAI/1536) when the
+// file finishes, so the NEXT file sharing this shard process doesn't inherit
+// this file's embedding shape in its beforeAll (which runs before the preload's
+// per-test beforeEach can repair it) and build a mis-sized vector schema.
+afterAll(() => {
+  resetGateway();
 });

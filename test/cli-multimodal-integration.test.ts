@@ -161,3 +161,12 @@ describe('cli connectEngine — embedding_multimodal_model DB→gateway plumbing
     expect(capturedUrl).toBe('http://127.0.0.1:8091/v1/rerank');
   });
 });
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. Restore the preload baseline (OpenAI/1536) when the
+// file finishes, so the NEXT file sharing this shard process doesn't inherit
+// this file's embedding shape in its beforeAll (which runs before the preload's
+// per-test beforeEach can repair it) and build a mis-sized vector schema.
+afterAll(() => {
+  resetGateway();
+});
