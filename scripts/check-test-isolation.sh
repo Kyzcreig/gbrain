@@ -18,8 +18,10 @@
 #  R4: any file that creates `new PGLiteEngine(` must call `.disconnect(`
 #      inside an `afterAll(` block. Without disconnect, engines leak across
 #      file boundaries within a shard process.
-#  R5: any file that calls `configureGateway(` must also call
-#      `resetGateway(` (in afterAll/afterEach). The AI gateway is
+#  R5: any file that calls `configureGateway(` must restore the gateway
+#      (`resetGateway(` or `configureGateway(`) INSIDE an afterAll/afterEach
+#      hook body; beforeEach / in-test resets run before the leak and don't
+#      count. The AI gateway is
 #      PROCESS-GLOBAL; a leaked config (embed model/dims, keys, base URLs)
 #      reaches every later file in the shard and sizes its PGLite schema,
 #      so e.g. a leaked LiteLLM embed model made eval-canary fail with
@@ -148,18 +150,51 @@ while IFS= read -r f; do
     fi
   fi
 
-  # R5: configureGateway() requires a resetGateway() restore. Comment lines
-  # (// or JSDoc *) are stripped first so prose mentions don't count. A call
-  # that only runs in a spawned child process (template-string script) cannot
-  # leak; such a file opts out with a `isolation-lint: R5-subprocess-only`
-  # comment naming why.
+  # R5: configureGateway() requires a restore INSIDE an afterAll/afterEach
+  # hook body. A resetGateway() in beforeEach or a test body runs BEFORE the
+  # leak it is meant to undo: after the file's last test the gateway still
+  # holds that test's configureGateway() shape, and the next file's beforeAll
+  # (which runs before the preload's empty-slot repair) inherits it. The hook
+  # body is tracked by paren/brace depth from the `afterAll(`/`afterEach(`
+  # token to its matching close; a `resetGateway(` or `configureGateway(`
+  # inside it counts as the restore. Comment lines (// or JSDoc *) are
+  # stripped first so prose mentions don't count. A call that only runs in a
+  # spawned child process (template-string script) cannot leak; such a file
+  # opts out with a `isolation-lint: R5-subprocess-only` comment naming why.
   cg_lines=$(grep -nE 'configureGateway[[:space:]]*\(' "$f" 2>/dev/null \
     | grep -vE '^[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
   if [ -n "$cg_lines" ] && ! grep -qF 'isolation-lint: R5-subprocess-only' "$f" 2>/dev/null; then
-    reset_lines=$(grep -nE 'resetGateway[[:space:]]*\(' "$f" 2>/dev/null \
-      | grep -vE '^[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
-    if [ -z "$reset_lines" ]; then
-      emit_violation "$f" "R5" "calls configureGateway() but never resetGateway(); the process-global gateway leaks to later files in the shard. Add afterAll(() => resetGateway()) or rename to *.serial.test.ts" "$cg_lines"
+    restores=$(awk '
+      BEGIN { inhook = 0; ok = 0 }
+      /^[[:space:]]*(\/\/|\*|\/\*)/ { next }
+      {
+        line = $0
+        while (line != "") {
+          if (!inhook) {
+            if (!match(line, /(afterAll|afterEach)[[:space:]]*\(/)) break
+            inhook = 1; depth = 0; opened = 0
+            line = substr(line, RSTART + RLENGTH - 1)
+          }
+          n = length(line); closed_at = 0
+          for (i = 1; i <= n; i++) {
+            c = substr(line, i, 1)
+            if (c == "(" || c == "{") { depth++; opened = 1 }
+            else if (c == ")" || c == "}") {
+              depth--
+              if (opened && depth <= 0) { closed_at = i; break }
+            }
+          }
+          body = closed_at ? substr(line, 1, closed_at) : line
+          if (body ~ /(resetGateway|configureGateway)[[:space:]]*\(/) { ok = 1; exit }
+          if (!closed_at) break
+          inhook = 0
+          line = substr(line, closed_at + 1)
+        }
+      }
+      END { print ok }
+    ' "$f" 2>/dev/null)
+    if [ "$restores" != "1" ]; then
+      emit_violation "$f" "R5" "calls configureGateway() but no afterAll/afterEach hook restores it (a reset in beforeEach or a test body runs before the leak); the process-global gateway leaks to later files in the shard. Add afterAll(() => resetGateway()) or rename to *.serial.test.ts" "$cg_lines"
     fi
   fi
 done <<EOF

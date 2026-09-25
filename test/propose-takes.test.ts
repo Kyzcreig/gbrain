@@ -14,7 +14,7 @@
  *  - parseExtractorOutput unit tests for the raw JSON parser
  */
 
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, afterAll } from 'bun:test';
 import { withEnv, emptyHome } from './helpers/with-env.ts';
 import {
   runPhaseProposeTakes,
@@ -38,6 +38,15 @@ import { CYCLE_DEADLINE_RESERVE_MS } from '../src/core/cycle/base-phase.ts';
 import type { OperationContext } from '../src/core/operations.ts';
 import type { BrainEngine } from '../src/core/engine.ts';
 import type { Page } from '../src/core/types.ts';
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. A reset in beforeEach / a test body runs BEFORE the
+// leak, so restore the preload baseline when the file finishes; otherwise the
+// NEXT file in this shard process inherits the last test's gateway shape in its
+// beforeAll (which runs before the preload's per-test beforeEach can repair it).
+afterAll(() => {
+  resetGateway();
+});
 
 // ─── Mock engine ────────────────────────────────────────────────────
 

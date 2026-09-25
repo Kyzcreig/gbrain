@@ -338,6 +338,7 @@ The cross-file flake class is enforced statically by `scripts/check-test-isolati
 | **R2** | `mock.module(...)` anywhere in the file | Rename file to `*.serial.test.ts` (no DI on production code for testability) |
 | **R3** | `new PGLiteEngine(` outside ~50 lines after a `beforeAll(` line | Use the canonical block (below) inside `beforeAll(` |
 | **R4** | Files creating `new PGLiteEngine(` without `engine.disconnect(` inside an `afterAll(` block | Add `afterAll(() => engine.disconnect())` |
+| **R5** | Files calling `configureGateway(` without a `resetGateway(`/`configureGateway(` restore inside an `afterAll(`/`afterEach(` hook body (a reset in `beforeEach` or a test body runs before the leak and does not count; `isolation-lint: R5-subprocess-only` opts out calls that only run in a child process) | Add `afterAll(() => resetGateway())` |
 
 Files that violated these rules at the isolation-lint baseline are listed in `scripts/check-test-isolation.allowlist`. **The allow-list MUST shrink over time** — never add new entries.
 

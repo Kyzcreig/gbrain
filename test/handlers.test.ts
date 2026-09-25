@@ -28,6 +28,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await engine.disconnect();
+  // R5: restore the process-global gateway (see check-test-isolation.sh) so the
+  // last test's configureGateway() shape doesn't leak into the next file.
+  resetGateway();
 });
 
 describe('registerBuiltinHandlers', () => {

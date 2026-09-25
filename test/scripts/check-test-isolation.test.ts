@@ -199,7 +199,7 @@ describe('check-test-isolation.sh', () => {
     });
   });
 
-  describe('R5 — configureGateway() requires resetGateway()', () => {
+  describe('R5 — configureGateway() requires an afterAll/afterEach restore', () => {
     it('flags configureGateway without any resetGateway', () => {
       const r = runLintIn([
         {
@@ -261,6 +261,80 @@ describe('check-test-isolation.sh', () => {
             `/**\n * configureGateway() pushes the snapshot (push seam)\n */\n` +
             `// configureGateway() is not called here\n` +
             `test('x', () => {});\n`,
+        },
+      ]);
+      expect(r.status).toBe(0);
+    });
+
+    it('flags a resetGateway() that only runs in beforeEach (runs before the leak)', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-before-each.test.ts',
+          contents:
+            `import { beforeEach, test } from 'bun:test';\n` +
+            `import { configureGateway, resetGateway } from '../src/core/ai/gateway.ts';\n` +
+            `beforeEach(() => resetGateway());\n` +
+            `test('x', () => { configureGateway({ embedding_model: 'litellm:x', env: {} }); });\n`,
+        },
+      ]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('R5');
+      expect(r.stdout).toContain('gw-before-each.test.ts');
+    });
+
+    it('flags a resetGateway() that only runs inside a test body', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-in-test.test.ts',
+          contents:
+            `test('x', () => {\n` +
+            `  resetGateway();\n` +
+            `  configureGateway({ env: {} });\n` +
+            `});\n`,
+        },
+      ]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('R5');
+    });
+
+    it('flags an afterAll hook that exists but does not restore the gateway', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-after-no-restore.test.ts',
+          contents:
+            `afterAll(async () => {\n` +
+            `  await engine.disconnect();\n` +
+            `});\n` +
+            `beforeEach(() => resetGateway());\n` +
+            `test('x', () => { configureGateway({ env: {} }); });\n`,
+        },
+      ]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('R5');
+    });
+
+    it('does NOT flag a multi-line afterEach hook that restores the gateway', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-after-each.test.ts',
+          contents:
+            `afterEach(() => {\n` +
+            `  cleanup();\n` +
+            `  resetGateway();\n` +
+            `});\n` +
+            `test('x', () => { configureGateway({ env: {} }); });\n`,
+        },
+      ]);
+      expect(r.status).toBe(0);
+    });
+
+    it('finds the restoring hook after an unrelated one-line hook', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-second-hook.test.ts',
+          contents:
+            `afterEach(() => cleanup()); afterAll(() => resetGateway());\n` +
+            `test('x', () => { configureGateway({ env: {} }); });\n`,
         },
       ]);
       expect(r.status).toBe(0);

@@ -16,7 +16,7 @@
  *     nothing), and config `provider_chat_options` overrides the derived key
  */
 
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
 import {
   chat,
   configureGateway,
@@ -24,6 +24,15 @@ import {
   resetGateway,
   __setGenerateTextTransportForTests,
 } from '../../src/core/ai/gateway.ts';
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. A reset in beforeEach / a test body runs BEFORE the
+// leak, so restore the preload baseline when the file finishes; otherwise the
+// NEXT file in this shard process inherits the last test's gateway shape in its
+// beforeAll (which runs before the preload's per-test beforeEach can repair it).
+afterAll(() => {
+  resetGateway();
+});
 
 describe('openAIPromptCacheKey — derivation', () => {
   test('same system + same tools → identical stable key (sticky routing)', () => {
