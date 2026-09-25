@@ -16,7 +16,7 @@
  * `generateText` import via Bun's module-replace pattern.
  */
 
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test';
 import {
   configureGateway,
   resetGateway,
@@ -32,6 +32,15 @@ import { parseModelId, resolveRecipe, assertTouchpoint } from '../../src/core/ai
 import { AIConfigError } from '../../src/core/ai/errors.ts';
 import { listRecipes, getRecipe } from '../../src/core/ai/recipes/index.ts';
 import type { Recipe } from '../../src/core/ai/types.ts';
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. A reset in beforeEach / a test body runs BEFORE the
+// leak, so restore the preload baseline when the file finishes; otherwise the
+// NEXT file in this shard process inherits the last test's gateway shape in its
+// beforeAll (which runs before the preload's per-test beforeEach can repair it).
+afterAll(() => {
+  resetGateway();
+});
 
 describe('chat touchpoint — recipe registry', () => {
   test('all hosted tool-loop providers ship a chat touchpoint with supports_subagent_loop', () => {

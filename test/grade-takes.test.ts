@@ -19,7 +19,7 @@
  *  - takeIsOldEnough unit tests
  */
 
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, afterAll } from 'bun:test';
 import {
   runPhaseGradeTakes,
   defaultJudge,
@@ -32,6 +32,15 @@ import {
 } from '../src/core/cycle/grade-takes.ts';
 import type { OperationContext } from '../src/core/operations.ts';
 import type { BrainEngine, Take, TakeResolution } from '../src/core/engine.ts';
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. A reset in beforeEach / a test body runs BEFORE the
+// leak, so restore the preload baseline when the file finishes; otherwise the
+// NEXT file in this shard process inherits the last test's gateway shape in its
+// beforeAll (which runs before the preload's per-test beforeEach can repair it).
+afterAll(async () => {
+  (await import('../src/core/ai/gateway.ts')).resetGateway();
+});
 
 // ─── Mock engine ────────────────────────────────────────────────────
 

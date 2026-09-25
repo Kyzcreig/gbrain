@@ -11,13 +11,22 @@
  * machine's real ~/.gbrain/config.json never leaks in.
  */
 
-import { describe, test, expect, afterEach } from 'bun:test';
+import { describe, test, expect, afterEach, afterAll } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateModelId, probeChatModel, configureGateway, resetGateway } from '../../src/core/ai/gateway.ts';
 import { normalizeModelId } from '../../src/core/model-id.ts';
 import { withEnv } from '../helpers/with-env.ts';
+
+// Test isolation (check-test-isolation R5): this file calls configureGateway(),
+// which is process-global. A reset in beforeEach / a test body runs BEFORE the
+// leak, so restore the preload baseline when the file finishes; otherwise the
+// NEXT file in this shard process inherits the last test's gateway shape in its
+// beforeAll (which runs before the preload's per-test beforeEach can repair it).
+afterAll(() => {
+  resetGateway();
+});
 
 const REAL = 'anthropic:claude-sonnet-4-6';
 
