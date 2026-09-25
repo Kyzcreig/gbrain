@@ -514,6 +514,56 @@ describeE2E('E2E: Versions', () => {
     expect(reverted.compiled_truth).not.toContain('(Modified)');
     expect(reverted.title).toBe(original.title);
   }, 30_000);
+
+  // page_versions.title (v146) has no backfill: every version row written
+  // before the migration has title NULL, and COALESCE(pv.title, pages.title)
+  // is what keeps revert working on that history. The test above only covers
+  // the sourceId branch against a v146 row. These pin the NULL-title case on
+  // the op path (which always passes ctx.sourceId) and both cases on the
+  // engine's no-opts branch.
+  const seedTwoVersions = async (slug: string, first: string, second: string) => {
+    const engine = getEngine();
+    await importFromContent(engine, slug, first, { noEmbed: true });
+    await importFromContent(engine, slug, second, { noEmbed: true });
+    return engine;
+  };
+  const nullVersionTitles = (slug: string) => getEngine().executeRaw(
+    `UPDATE page_versions SET title = NULL WHERE page_id = (SELECT id FROM pages WHERE slug = $1)`,
+    [slug],
+  );
+  const personPage = (title: string, body: string) =>
+    `---\ntype: person\ntitle: ${title}\n---\n\n${body}\n`;
+
+  test('revert_version to a pre-v146 (NULL title) version keeps the current title', async () => {
+    const slug = 'people/pg-op-null-title';
+    const engine = await seedTwoVersions(slug, personPage('Kept Title', 'v1 body.'), personPage('Kept Title', 'v2 body.'));
+    await nullVersionTitles(slug);
+    const versions = await callOp('get_versions', { slug }) as Array<{ id: number }>;
+    await callOp('revert_version', { slug, version_id: versions[versions.length - 1]!.id });
+    const page = await engine.getPage(slug);
+    expect(page!.title).toBe('Kept Title');
+    expect(page!.compiled_truth).toContain('v1 body.');
+  }, 30_000);
+
+  test('engine.revertToVersion without opts restores a title-only edit', async () => {
+    const slug = 'people/pg-noopts-title';
+    const engine = await seedTwoVersions(slug, personPage('NoOpts Orig', 'Body.'), personPage('NoOpts Edited', 'Body.'));
+    expect((await engine.getPage(slug))!.title).toBe('NoOpts Edited');
+    const versions = await engine.getVersions(slug);
+    await engine.revertToVersion(slug, versions[versions.length - 1]!.id);
+    expect((await engine.getPage(slug))!.title).toBe('NoOpts Orig');
+  }, 30_000);
+
+  test('engine.revertToVersion without opts keeps the current title for a NULL-title version', async () => {
+    const slug = 'people/pg-noopts-null';
+    const engine = await seedTwoVersions(slug, personPage('Still Here', 'v1 body.'), personPage('Still Here', 'v2 body.'));
+    await nullVersionTitles(slug);
+    const versions = await engine.getVersions(slug);
+    await engine.revertToVersion(slug, versions[versions.length - 1]!.id);
+    const page = await engine.getPage(slug);
+    expect(page!.title).toBe('Still Here');
+    expect(page!.compiled_truth).toContain('v1 body.');
+  }, 30_000);
 });
 
 // ─────────────────────────────────────────────────────────────────

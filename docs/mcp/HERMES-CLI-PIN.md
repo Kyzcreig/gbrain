@@ -12,9 +12,25 @@ file, the workflow pins, and the affected assertions together.
   version stamp; CI installs the RELEASE TAG `v2026.8.3` = commit `3c27eb62` — the two
   differ by post-release main commits, same declared version. If a CI door run ever
   diverges from these notes, re-observe against the tag checkout.)
-- Installer sha256: `2076946edc23b3aed4a82ccb2e6b38ab593575626206dbdd192384e375b6d57c`
-  (observed 2026-08-31; the served `scripts/install.sh` matched byte-for-byte
-  against the upstream repo at `a071fc80d`). Full-script review notes for
+- Installer sha256: `2017ddf0cc7bc6cfb70d40dc9fba1d916f47dbcccf5fe73bdee2cf93a11262af`
+  (re-pinned 2026-09-24 after the nightly digest-drift red, run 36006448561;
+  the served `scripts/install.sh` matched byte-for-byte against the upstream
+  repo at `c7d2985ae3e2`). Delta review vs the previous pin (`2076946e…`,
+  upstream `a071fc80d`, +370/-84 lines): no new outbound hosts, no
+  eval/base64, door flags + unknown-flag `exit 1` unchanged. Changes:
+  Termux Python upper bound + TUR fallback (Termux-only); a NON-Termux host
+  with a supported system Python (`>=3.11,<3.14`, via `uv python find
+  --system`) now REUSES it instead of downloading 3.11 — so the door venv
+  can be the runner's system 3.12, which the tag-pinned payload's
+  `requires-python` accepts; Node pre-release rejection + step-down to older
+  LTS lines, and a best-effort `sudo apt-get install libatomic1` on
+  Debian/Ubuntu (distro package, same sudo class as before); HTTPS clone
+  retry + blobless partial-clone fallback on GitHub 429s; a rescue ref
+  before `reset --hard` on managed re-installs; `uv venv` failure is now
+  fatal; CLI `npm install` scoped to the `ui-tui`/`web` workspaces (+root)
+  so apps/desktop's node-pty is never built (both exist at the pinned tag);
+  root-lockfile protection for dirty workspace manifests; desktop-only
+  Rolldown binding repair. Previous-pin review notes, still accurate for
   this pin: the door flags (`--skip-setup`/`--non-interactive`/`--skip-browser`/
   `--skip-computer-use`/`--branch`/`--commit`/`--force-commit`) are intact
   and unknown flags hard-fail (`exit 1`, so a dropped flag can never silently
@@ -38,7 +54,8 @@ file, the workflow pins, and the affected assertions together.
   managed Node is v26.
   (download https://hermes-agent.nousresearch.com/install.sh to a file first; verify; then run)
 - Installer flags used: `--skip-setup --non-interactive`; binary lands at `~/.local/bin/hermes`
-- Python 3.11.15 via uv
+- Python 3.11.15 via uv (as observed 2026-08-12; since the 2026-09-24 installer pin a host with
+  a supported system Python 3.11-3.13 reuses it, so CI runners may report their system 3.12)
 
 ## HERMES_HOME — HONORED (verified)
 Installer (`HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"`) AND runtime both honor it:
@@ -116,7 +133,7 @@ non-interactive. `hermes cron tick` = run due jobs once and exit. `hermes cron l
   `git -C ~/.hermes/hermes-agent rev-parse HEAD` and loud-fails on any mismatch, so an
   installer that silently ignores unknown flags (or a moved checkout layout) can never
   run unpinned upstream code on a runner that later holds secrets.
-- `HERMES_INSTALL_SHA256: "2076946edc23b3aed4a82ccb2e6b38ab593575626206dbdd192384e375b6d57c"`
+- `HERMES_INSTALL_SHA256: "2017ddf0cc7bc6cfb70d40dc9fba1d916f47dbcccf5fe73bdee2cf93a11262af"`
 - Door test asserts `hermes --version` output contains `v$HERMES_VERSION` when the env var is set.
 - `hermes --version` output shape: `Hermes Agent v0.20.0 (2026.8.3)` + install dir + python lines.
 - Missing-secret posture is SPLIT by trigger: on `pull_request` the paid leg is

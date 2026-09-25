@@ -243,6 +243,23 @@ export async function startHttpTransport(opts: HttpTransportOptions) {
     return headers;
   }
 
+  // Background (not-awaited) DB writes: the debounced last_used_at UPDATE and
+  // the mcp_request_log INSERT. The response never waits on them, so a caller
+  // that reads those rows right after a request races them. Tracking them lets
+  // tests (and a graceful shutdown) wait for exactly these writes instead of
+  // sleeping a guessed interval.
+  const pendingWrites = new Set<Promise<void>>();
+  function trackBackgroundWrite(write: PromiseLike<unknown>, _label: string): void {
+    const settled: Promise<void> = Promise.resolve(write)
+      .then(() => undefined, () => undefined)
+      .finally(() => { pendingWrites.delete(settled); });
+    pendingWrites.add(settled);
+  }
+  /** Resolves once every background write issued so far has settled (success or failure). */
+  async function settleBackgroundWrites(): Promise<void> {
+    while (pendingWrites.size > 0) await Promise.all([...pendingWrites]);
+  }
+
   async function validateToken(authHeader: string | null): Promise<AuthResult> {
     if (!authHeader?.startsWith('Bearer ')) return { ok: false };
     const token = authHeader.slice(7);
@@ -257,11 +274,11 @@ export async function startHttpTransport(opts: HttpTransportOptions) {
       const rowName = row.name as string;
       // Debounced last_used_at update — only writes once per token per 60s.
       // SQL-level WHERE clause keeps this race-tolerant even under concurrent requests.
-      sql`UPDATE access_tokens
+      trackBackgroundWrite(sql`UPDATE access_tokens
           SET last_used_at = now()
           WHERE id = ${rowId}
-            AND (last_used_at IS NULL OR last_used_at < now() - interval '60 seconds')`
-        .catch(() => { /* fire-and-forget */ });
+            AND (last_used_at IS NULL OR last_used_at < now() - interval '60 seconds')`,
+        'last_used_at'); // fire-and-forget: failures are swallowed
       // v0.28: extract per-token takes-holder allow-list. Fail-safe default
       // is ['world'] — a token with no permissions row sees public claims only.
       // #2529: decode + parse via the shared core helpers so this transport and
@@ -300,9 +317,9 @@ export async function startHttpTransport(opts: HttpTransportOptions) {
   }
 
   function logRequest(tokenName: string | null, operation: string, status: string, latencyMs: number) {
-    sql`INSERT INTO mcp_request_log (token_name, operation, latency_ms, status)
-        VALUES (${tokenName}, ${operation}, ${latencyMs}, ${status})`
-      .catch(() => { /* best-effort */ });
+    trackBackgroundWrite(sql`INSERT INTO mcp_request_log (token_name, operation, latency_ms, status)
+        VALUES (${tokenName}, ${operation}, ${latencyMs}, ${status})`,
+      'mcp_request_log'); // best-effort: failures are swallowed
   }
 
   const server = Bun.serve({
@@ -544,5 +561,7 @@ export async function startHttpTransport(opts: HttpTransportOptions) {
   console.error('⚠️  Do NOT use open OAuth registration for remote MCP access.');
   console.error('   Tokens are managed via: gbrain auth create/list/revoke');
 
-  return server;
+  // settleBackgroundWrites: await the not-awaited last_used_at / request-log
+  // writes of every request that has already been answered.
+  return Object.assign(server, { settleBackgroundWrites });
 }
