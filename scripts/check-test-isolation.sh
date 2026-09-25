@@ -18,6 +18,13 @@
 #  R4: any file that creates `new PGLiteEngine(` must call `.disconnect(`
 #      inside an `afterAll(` block. Without disconnect, engines leak across
 #      file boundaries within a shard process.
+#  R5: any file that calls `configureGateway(` must also call
+#      `resetGateway(` (in afterAll/afterEach). The AI gateway is
+#      PROCESS-GLOBAL; a leaked config (embed model/dims, keys, base URLs)
+#      reaches every later file in the shard and sizes its PGLite schema,
+#      so e.g. a leaked LiteLLM embed model made eval-canary fail with
+#      "expected 1280 dimensions, not 1536" once a shard reshuffle put the
+#      leaker first. Comment-only mentions are ignored.
 #
 # Scope:
 #  - Recursively scans `test/**/*.test.ts`.
@@ -140,6 +147,18 @@ while IFS= read -r f; do
       emit_violation "$f" "R4" "creates PGLiteEngine but missing afterAll(() => engine.disconnect()); engine leaks across files in the shard process" ""
     fi
   fi
+
+  # R5: configureGateway() requires a resetGateway() restore. Comment lines
+  # (// or JSDoc *) are stripped first so prose mentions don't count.
+  cg_lines=$(grep -nE 'configureGateway[[:space:]]*\(' "$f" 2>/dev/null \
+    | grep -vE '^[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
+  if [ -n "$cg_lines" ]; then
+    reset_lines=$(grep -nE 'resetGateway[[:space:]]*\(' "$f" 2>/dev/null \
+      | grep -vE '^[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
+    if [ -z "$reset_lines" ]; then
+      emit_violation "$f" "R5" "calls configureGateway() but never resetGateway(); the process-global gateway leaks to later files in the shard. Add afterAll(() => resetGateway()) or rename to *.serial.test.ts" "$cg_lines"
+    fi
+  fi
 done <<EOF
 $FILE_LIST
 EOF
@@ -153,6 +172,8 @@ if [ $violations -gt 0 ]; then
   echo "  - For mock.module(), rename to *.serial.test.ts (quarantine)"
   echo "  - For PGLiteEngine, follow the canonical pattern in"
   echo "    test/helpers/reset-pglite.ts JSDoc and CLAUDE.md."
+  echo "  - For configureGateway(), add afterAll(() => resetGateway())"
+  echo "    (restores the preload's legacy 1536-d baseline)."
   echo
   echo "Or, if this is a baseline file from before the lint shipped,"
   echo "add it to scripts/check-test-isolation.allowlist (with a TODO"

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -8,8 +8,15 @@ import * as path from 'node:path';
 import { withEnv } from './helpers/with-env.ts';
 import { logRerankFailure } from '../src/core/rerank-audit.ts';
 import { doctorSource, doctorFileSource } from './helpers/doctor-source.ts';
+import { resetGateway } from '../src/core/ai/gateway.ts';
 
 describe('doctor command', () => {
+  // Several reranker_health tests below call configureGateway (VOYAGE key,
+  // openai-small embed) on the PROCESS-GLOBAL gateway. Restore the preload
+  // baseline after each so neither later tests nor later files in this bun
+  // shard inherit it.
+  afterEach(() => resetGateway());
+
   test('doctor module exports runDoctor', async () => {
     const { runDoctor } = await import('../src/commands/doctor.ts');
     expect(typeof runDoctor).toBe('function');
