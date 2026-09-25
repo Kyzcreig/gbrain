@@ -16,7 +16,7 @@ import {
   checkZeEmbeddingHealth,
   checkEmbeddingWidthConsistency,
 } from '../src/commands/doctor.ts';
-import { configureGateway } from '../src/core/ai/gateway.ts';
+import { configureGateway, resetGateway } from '../src/core/ai/gateway.ts';
 
 let engine: PGLiteEngine;
 
@@ -28,6 +28,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await engine.disconnect();
+  // Tests below call configureGateway (and __unconfigureGatewayForTests) on the
+  // PROCESS-GLOBAL gateway; restore the preload baseline for later shard files.
+  resetGateway();
 });
 
 beforeEach(async () => {
