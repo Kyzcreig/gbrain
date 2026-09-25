@@ -272,6 +272,18 @@ describe('check-test-isolation.sh', () => {
       ]);
       expect(r.status).toBe(0);
     });
+
+    it('honors the R5-subprocess-only pragma (call runs in a spawned child)', () => {
+      const r = runLintIn([
+        {
+          path: 'gw-subprocess.test.ts',
+          contents:
+            `// isolation-lint: R5-subprocess-only — script string runs in a child process\n` +
+            `const script = \`\n  configureGateway({ env: {} });\n\`;\n`,
+        },
+      ]);
+      expect(r.status).toBe(0);
+    });
   });
 
   describe('scope', () => {

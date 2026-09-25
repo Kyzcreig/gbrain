@@ -149,10 +149,13 @@ while IFS= read -r f; do
   fi
 
   # R5: configureGateway() requires a resetGateway() restore. Comment lines
-  # (// or JSDoc *) are stripped first so prose mentions don't count.
+  # (// or JSDoc *) are stripped first so prose mentions don't count. A call
+  # that only runs in a spawned child process (template-string script) cannot
+  # leak; such a file opts out with a `isolation-lint: R5-subprocess-only`
+  # comment naming why.
   cg_lines=$(grep -nE 'configureGateway[[:space:]]*\(' "$f" 2>/dev/null \
     | grep -vE '^[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
-  if [ -n "$cg_lines" ]; then
+  if [ -n "$cg_lines" ] && ! grep -qF 'isolation-lint: R5-subprocess-only' "$f" 2>/dev/null; then
     reset_lines=$(grep -nE 'resetGateway[[:space:]]*\(' "$f" 2>/dev/null \
       | grep -vE '^[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
     if [ -z "$reset_lines" ]; then
