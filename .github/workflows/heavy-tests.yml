@@ -896,6 +896,13 @@ jobs:
         if: steps.paidgate.outputs.paid == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # bunfig.toml preloads test/helpers/provider-keys-preload.ts, which
+          # DELETES ANTHROPIC_API_KEY from process.env before any test file
+          # loads unless this opt-in is set. Without it hasOpencodeAuth() never
+          # sees the secret and the paid tier silently skips (the PAID-SENTINEL
+          # below then refuses green). Pinned by
+          # test/scripts/heavy-tests-wiring.test.ts.
+          GBRAIN_TEST_KEEP_PROVIDER_KEYS: '1'
         run: |
           EXIT=0
           bun test --timeout=600000 test/e2e/install-real-opencode.serial.test.ts > door.txt 2>&1 || EXIT=$?
