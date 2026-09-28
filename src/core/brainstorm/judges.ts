@@ -64,6 +64,7 @@ export const ANTHROPIC_OUTPUT_CAPS: Record<string, number> = {
   'claude-fable-5': 64_000,
   'claude-opus-5-5': 32_000,
   'claude-opus-5': 32_000,
+  'claude-sonnet-5-5': 64_000,
   'claude-sonnet-5': 64_000,
   'claude-opus-4-8': 32_000,
   // FLEET FORK PATCH (2026-08-03, re-applied on v0.48.2.0 2026-09-04):
