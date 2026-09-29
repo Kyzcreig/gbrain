@@ -101,6 +101,7 @@ export const CANONICAL_PRICING: Record<string, ModelPricing> = {
   // intro discount ($2/$10 through 2026-08-31) is deliberately NOT modeled —
   // the table carries standard rates so estimates stay conservative and
   // don't need a time-bombed edit when the promo lapses.
+  'anthropic:claude-sonnet-5-5':            anthro( 2.00, 10.00), // Sonnet 5.5 list 2026-09-28 (NOTIONAL on the relay)
   'anthropic:claude-sonnet-5':            anthro( 3.00, 15.00),
   'anthropic:claude-sonnet-4-6':          anthro( 3.00, 15.00),
   // Haiku 4.5 — both the dateless canonical id and the dated snapshot.

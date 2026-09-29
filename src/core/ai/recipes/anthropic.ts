@@ -17,7 +17,7 @@ export const anthropic: Recipe = {
   touchpoints: {
     // No embedding model available.
     expansion: {
-      models: ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-sonnet-4-6'],
+      models: ['claude-haiku-4-5-20251001', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-sonnet-4-6'],
       cost_per_1m_tokens_usd: 0.25,
       price_last_verified: '2026-05-10',
     },
@@ -33,6 +33,7 @@ export const anthropic: Recipe = {
         // 'claude-fable-5' above — do NOT re-add it (duplicate key).
         'claude-fable-5-1',
         'claude-opus-4-7',
+        'claude-sonnet-5-5',
         'claude-sonnet-5',
         'claude-sonnet-4-6',
         'claude-haiku-4-5-20251001',
@@ -48,6 +49,7 @@ export const anthropic: Recipe = {
         'claude-fable-5': 1_000_000,
         'claude-opus-5-5': 1_000_000,
         'claude-opus-5': 1_000_000,
+        'claude-sonnet-5-5': 1_000_000,
         'claude-sonnet-5': 1_000_000,
         'claude-opus-4-8': 1_000_000,
         'claude-opus-4-7': 1_000_000,
