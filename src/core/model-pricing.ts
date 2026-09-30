@@ -130,6 +130,13 @@ export const CANONICAL_PRICING: Record<string, ModelPricing> = {
   'openai:gpt-5.6-sol':                   { input:  5.00, output: 30.00 },
   'openai:gpt-5.6-terra':                 { input:  2.50, output: 15.00 },
   'openai:gpt-5.6-luna':                  { input:  0.20, output:  1.20 },
+  // gpt-6.1-sol (models.dev, 2026-09-30): the fleet's default Codex model
+  // (inbox-filer rung 1, big-window policy). The only non-Anthropic row with
+  // cache fields; they are copied from models.dev, not derived. These are the
+  // <=272K-input rates. Above 272K input the request bills 4 / 15 / 0.20 / 5
+  // per 1M. ModelPricing has no tier field, so a >272K request is
+  // under-estimated by about 2x on input.
+  'openai:gpt-6.1-sol':                   { input:  2.00, output: 10.00, cache_read: 0.10, cache_write: 2.50 },
 
   // ── Google ─────────────────────────────────────────────────────────────
   // `gemini-1.5-pro` was retired by Google (#3510); kept so historical
