@@ -26,6 +26,17 @@ import { claudeCli } from '../src/core/ai/recipes/claude-cli.ts';
 import { ANTHROPIC_OUTPUT_CAPS } from '../src/core/brainstorm/judges.ts';
 import { estimateAnthropicCost } from '../src/core/brain-score-recommendations.ts';
 
+const VERIFIED_NON_ANTHROPIC_CACHE = new Set(['openai:gpt-6.1-sol']);
+
+test('gpt-6.1-sol is priced at the models.dev <=272K rates with cache fields', () => {
+  expect(canonicalLookup('openai:gpt-6.1-sol')).toEqual({
+    input: 2,
+    output: 10,
+    cache_read: 0.1,
+    cache_write: 2.5,
+  });
+});
+
 test('Opus 5.5 is priceable and available in both chat recipes without removing Opus 5', () => {
   expect(canonicalLookup('claude-opus-5-5')).toMatchObject({
     input: 4,
@@ -118,8 +129,9 @@ describe('CANONICAL_PRICING — table integrity', () => {
       }
       // Non-Anthropic rows deliberately carry NO cache fields until their
       // provider's cache pricing is verified — consumers fall back to the
-      // input rate (documented in ModelPricing).
-      if (!key.startsWith('anthropic:')) {
+      // input rate (documented in ModelPricing). VERIFIED_NON_ANTHROPIC_CACHE
+      // names the rows whose cache rates were checked by hand.
+      if (!key.startsWith('anthropic:') && !VERIFIED_NON_ANTHROPIC_CACHE.has(key)) {
         expect(p.cache_read).toBeUndefined();
         expect(p.cache_write).toBeUndefined();
       }
