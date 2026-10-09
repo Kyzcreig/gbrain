@@ -57,7 +57,7 @@ function pricingFor(modelId: string): { input: number; output: number } {
     const tailHit = ANTHROPIC_PRICING[tail];
     if (tailHit) return tailHit;
   }
-  return ANTHROPIC_PRICING['claude-haiku-4-5'];
+  return ANTHROPIC_PRICING['claude-haiku-5-5'];
 }
 
 /**

@@ -61,7 +61,7 @@ export interface FitOptions<T> {
   /** Quality gate threshold. Default 0.75. When the success ratio drops
    *  below this, result.degraded === true. */
   min_success_ratio?: number;
-  /** Override the summarization model (e.g. 'anthropic:claude-haiku-4-5').
+  /** Override the summarization model (e.g. 'anthropic:claude-haiku-5-5').
    *  Default falls back to the gateway's configured chat model. */
   summarizeModel?: string;
 }

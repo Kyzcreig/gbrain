@@ -878,7 +878,7 @@ async function resolveExpansionByEnv(out: ResolvedAIOptions): Promise<void> {
       console.error(`Detected ${r.auth_env?.required?.[0] ?? r.id} env var. Using ${out.expansion_model} for expansion.`);
     }
   }
-  // 0 or >1 → silent: gateway default (`anthropic:claude-haiku-4-5-…`) wins
+  // 0 or >1 → silent: gateway default (`anthropic:claude-haiku-5-5`) wins
   // and falls back gracefully at call time when key isn't set.
 }
 

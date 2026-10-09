@@ -148,7 +148,7 @@ export interface GBrainConfig {
   azure_openai_endpoint?: string;
   azure_openai_deployment?: string;
   azure_openai_use_entra?: string;
-  /** AI gateway config (v0.14+). v0.36+ default: "zeroentropyai:zembed-1" / 1280 / "anthropic:claude-haiku-4-5-20251001". */
+  /** AI gateway config (v0.14+). v0.36+ default: "zeroentropyai:zembed-1" / 1280 / "anthropic:claude-haiku-5-5". */
   embedding_model?: string;
   embedding_dimensions?: number;
   /**

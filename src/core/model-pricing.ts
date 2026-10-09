@@ -104,6 +104,13 @@ export const CANONICAL_PRICING: Record<string, ModelPricing> = {
   'anthropic:claude-sonnet-5-5':            anthro( 2.00, 10.00), // Sonnet 5.5 list 2026-09-28 (NOTIONAL on the relay)
   'anthropic:claude-sonnet-5':            anthro( 3.00, 15.00),
   'anthropic:claude-sonnet-4-6':          anthro( 3.00, 15.00),
+  // Haiku 5.5 (2026-10): pricing is TIERED by prompt size, applied to the
+  // whole request. <=100K prompt tokens: 0.10 in / 0.50 out / 0.01 cache-read
+  // / 0.125 5m cache-write per 1M (exactly anthro(0.10, 0.50)). >100K prompt
+  // tokens: 0.50 / 2.50 / 0.05 / 0.625. ModelPricing has no tier field, so the
+  // row carries the <=100K base and a >100K request is under-estimated 5x.
+  // Dateless id only: no dated 5-5 snapshot is published yet.
+  'anthropic:claude-haiku-5-5':           anthro( 0.10,  0.50),
   // Haiku 4.5 — both the dateless canonical id and the dated snapshot.
   'anthropic:claude-haiku-4-5':           anthro( 1.00,  5.00),
   'anthropic:claude-haiku-4-5-20251001':  anthro( 1.00,  5.00),

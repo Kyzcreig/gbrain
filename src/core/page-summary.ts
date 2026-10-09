@@ -52,6 +52,9 @@ export const SYNOPSIS_MAX_TOKENS = 200;
  * pages and the inline import path) — NOT the live chat default. Changing
  * this string invalidates prior embeddings via the D27 P1-5 contract; the
  * live default is the key-aware utility tier (#3813).
+ * Deliberately NOT moved to claude-haiku-5-5 with the utility tier
+ * (2026-10): moving it would re-stamp every title-tier page's hash with no
+ * change to the vectors. The live synopsis model follows the utility tier.
  */
 export const DEFAULT_SYNOPSIS_MODEL = 'anthropic:claude-haiku-4-5-20251001';
 

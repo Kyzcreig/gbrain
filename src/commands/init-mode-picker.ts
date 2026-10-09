@@ -34,7 +34,7 @@ import {
  * back to environment / config for anything not provided.
  */
 export interface ModePickerInputs {
-  /** Configured subagent tier model id (e.g. 'anthropic:claude-haiku-4-5'). */
+  /** Configured subagent tier model id (e.g. 'anthropic:claude-haiku-5-5'). */
   subagentModel?: string | null;
   /** Configured default model id. */
   defaultModel?: string | null;
