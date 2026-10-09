@@ -43,6 +43,7 @@ const SUPPORTED_MODELS = [
   'anthropic:claude-sonnet-5-5',
   'anthropic:claude-sonnet-5',
   'anthropic:claude-sonnet-4-6',
+  'anthropic:claude-haiku-5-5',
   'anthropic:claude-haiku-4-5',
   // gemini-2.5-flash holds the DEFAULT_MODEL_PANEL slot; gemini-1.5-pro
   // (#3510) and the gemini-2.0 family before it were retired by Google. The

@@ -43,6 +43,7 @@ export const claudeCli: Recipe = {
         'claude-sonnet-5-5',
         'claude-sonnet-5',
         'claude-sonnet-4-6',
+        'claude-haiku-5-5',
         'claude-haiku-4-5-20251001',
       ],
       supports_tools: true,
@@ -77,7 +78,7 @@ export const claudeCli: Recipe = {
     'claude-haiku-4-5': 'claude-haiku-4-5-20251001',
     'claude-sonnet-4-6-20250929': 'claude-sonnet-4-6',
     'sonnet': 'claude-sonnet-5-5',
-    'haiku': 'claude-haiku-4-5-20251001',
+    'haiku': 'claude-haiku-5-5',
     'opus': 'claude-opus-4-7',
   },
   setup_hint:

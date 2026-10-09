@@ -75,6 +75,9 @@ export const ANTHROPIC_OUTPUT_CAPS: Record<string, number> = {
   'claude-fable-5-1': 64_000,
   'claude-opus-4-7': 32_000,
   'claude-sonnet-4-6': 64_000,
+  // Haiku 5.5 (2026-10): 128K max output, 1M context. Dateless id; no dated
+  // snapshot is published yet.
+  'claude-haiku-5-5': 128_000,
   'claude-haiku-4-5': 64_000,
   'claude-haiku-4-5-20251001': 64_000,
   // Legacy 3.5 generation caps at 8,192 — much smaller. Without these

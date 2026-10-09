@@ -101,7 +101,9 @@ describe('claude-cli recipe registration', () => {
     const { getRecipe } = await import('../src/core/ai/recipes/index.ts');
     const recipe = getRecipe('claude-cli');
     expect(recipe!.aliases!['sonnet']).toBe('claude-sonnet-5-5');
-    expect(recipe!.aliases!['haiku']).toBe('claude-haiku-4-5-20251001');
+    expect(recipe!.aliases!['haiku']).toBe('claude-haiku-5-5');
+    // ADD-KEEP: the dateless 4-5 id still resolves to its dated snapshot.
+    expect(recipe!.aliases!['claude-haiku-4-5']).toBe('claude-haiku-4-5-20251001');
   });
 });
 

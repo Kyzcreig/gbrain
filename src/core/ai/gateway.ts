@@ -121,7 +121,7 @@ import {
   type RerankerSunset,
 } from './defaults.ts';
 import { logRerankFailure, type RerankFailureReason } from '../rerank-audit.ts';
-const DEFAULT_EXPANSION_MODEL = 'anthropic:claude-haiku-4-5-20251001';
+const DEFAULT_EXPANSION_MODEL = 'anthropic:claude-haiku-5-5';
 const DEFAULT_CHAT_MODEL = 'anthropic:claude-sonnet-4-6';
 // v0.35.0.0+: reranker runtime fallback. Used only when search.reranker.enabled
 // is set AND no explicit reranker_model is configured. #3657 seam: the value is

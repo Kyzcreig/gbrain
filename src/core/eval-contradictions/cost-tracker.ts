@@ -57,6 +57,9 @@ function pricingFor(modelId: string): { input: number; output: number } {
     const tailHit = ANTHROPIC_PRICING[tail];
     if (tailHit) return tailHit;
   }
+  // Kept on Haiku 4.5 ($1/$5) when the utility tier moved to 5-5 (2026-10):
+  // an unknown model priced at 5-5's $0.10/$0.50 would under-estimate 10x
+  // against --budget-usd. The 5-5 default judge is priced directly above.
   return ANTHROPIC_PRICING['claude-haiku-4-5'];
 }
 

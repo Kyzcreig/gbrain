@@ -64,7 +64,7 @@ export interface ResolveModelOpts {
 export const DEFAULT_ALIASES: Record<string, string> = {
   opus:   'anthropic:claude-opus-4-7',
   sonnet: 'anthropic:claude-sonnet-4-6',
-  haiku:  'anthropic:claude-haiku-4-5-20251001',
+  haiku:  'anthropic:claude-haiku-5-5',
   // `gemini` repointed (#2507): `gemini-3-pro` only ever existed as a preview
   // id (`gemini-3-pro-preview`) and was shut down — it was never chat-listed
   // in the google recipe nor priced. 2.5-flash is the recipe's chat models[0];
@@ -89,7 +89,7 @@ export const DEFAULT_ALIASES: Record<string, string> = {
  * Users override via `gbrain config set models.tier.<tier> <model>`.
  */
 export const TIER_DEFAULTS: Record<ModelTier, string> = {
-  utility:   'anthropic:claude-haiku-4-5-20251001',
+  utility:   'anthropic:claude-haiku-5-5',
   reasoning: 'anthropic:claude-sonnet-4-6',
   deep:      'anthropic:claude-opus-4-7',
   subagent:  'anthropic:claude-sonnet-4-6',

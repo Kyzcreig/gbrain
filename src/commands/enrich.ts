@@ -786,7 +786,7 @@ Options:
   --limit <N>            Max pages this run. Default ${DEFAULT_LIMIT}.
   --workers <K>          Parallel page workers. Default 1. PGLite clamps to 1.
   --model <provider:id>  Chat model. Default: configured chat model.
-                         For cheap bulk: --model anthropic:claude-haiku-4-5.
+                         For cheap bulk: --model anthropic:claude-haiku-5-5.
   --max-usd <FLOAT>      Cost cap (USD). Default ${DEFAULT_MAX_COST_USD}.
                          BEST-EFFORT under --workers > 1: can overshoot by up to
                          ~one in-flight call per worker. Pin --workers 1 for an

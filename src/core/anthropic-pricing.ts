@@ -28,7 +28,9 @@ export type { ModelPricing };
  * Bare-keyed Anthropic view, derived from the canonical table. Both the
  * dateless ids (`claude-haiku-4-5`, used by aliases / TIER_DEFAULTS / most
  * callers) and the dated snapshots (`claude-haiku-4-5-20251001`) are present
- * because canonical carries both.
+ * because canonical carries both. Haiku 5.5 (`claude-haiku-5-5`) is dateless
+ * only (no dated snapshot published) and carries its <=100K-prompt tier; the
+ * >100K tier (5x) is not modeled — see model-pricing.ts.
  */
 export const ANTHROPIC_PRICING: Record<string, ModelPricing> = Object.fromEntries(
   Object.entries(CANONICAL_PRICING)

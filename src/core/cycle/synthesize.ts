@@ -1725,7 +1725,7 @@ export interface JudgeClient {
  */
 export function makeJudgeClient(verdictModel: string): JudgeClient | null {
   // Normalize: ensure provider:model shape (and slash→colon — #1698). resolveModel
-  // returns bare anthropic ids (e.g. `claude-haiku-4-5`); gateway.chat needs `anthropic:...`.
+  // returns bare anthropic ids (e.g. `claude-haiku-5-5`); gateway.chat needs `anthropic:...`.
   const modelStr = normalizeModelId(verdictModel);
 
   // #1698 (C1): id-validity via the shared `validateModelId` core (resolveRecipe +
@@ -1918,7 +1918,7 @@ function buildTriageSample(content: string, maxChars: number): { text: string; s
 export async function judgeSignificance(
   client: JudgeClient,
   t: DiscoveredTranscript,
-  verdictModel = 'claude-haiku-4-5-20251001',
+  verdictModel = 'claude-haiku-5-5',
   opts: { maxChars?: number; maxTokens?: number; signal?: AbortSignal } = {},
 ): Promise<TriageResult> {
   const maxChars = Math.max(1000, opts.maxChars ?? DEFAULT_TRIAGE_MAX_CHARS);

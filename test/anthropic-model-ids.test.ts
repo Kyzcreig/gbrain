@@ -46,6 +46,16 @@ describe('Anthropic recipe model IDs', () => {
     expect(chatModels).toContain('claude-sonnet-5');
   });
 
+  it('Haiku 5.5 is listed (dateless id, 1M context) and Haiku 4.5 is kept', () => {
+    const chatModels = anthropic.touchpoints?.chat?.models ?? [];
+    expect(chatModels).toContain('claude-haiku-5-5');
+    expect(chatModels).toContain('claude-haiku-4-5-20251001');
+    expect(anthropic.touchpoints?.expansion?.models ?? []).toContain('claude-haiku-5-5');
+    expect(anthropic.touchpoints?.chat?.model_context_tokens?.['claude-haiku-5-5']).toBe(1_000_000);
+    // No dated 5-5 snapshot is published; no alias may invent one.
+    expect(anthropic.aliases?.['claude-haiku-5-5']).toBeUndefined();
+  });
+
   it('Sonnet 5 is listed for expansion', () => {
     expect(anthropic.touchpoints?.expansion?.models ?? []).toContain('claude-sonnet-5');
   });
