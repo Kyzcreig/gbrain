@@ -87,6 +87,16 @@ describe('CANONICAL_PRICING — table integrity', () => {
     expect(CANONICAL_PRICING['anthropic:claude-sonnet-5']).toMatchObject({ input: 3.0, output: 15.0 });
   });
 
+  test('Haiku 5.5 present at its <=100K-prompt tier; Haiku 4.5 kept at $1/$5', () => {
+    const h55 = CANONICAL_PRICING['anthropic:claude-haiku-5-5'];
+    expect(h55.input).toBeCloseTo(0.10, 10);
+    expect(h55.output).toBeCloseTo(0.50, 10);
+    expect(h55.cache_read).toBeCloseTo(0.01, 10);
+    expect(h55.cache_write).toBeCloseTo(0.125, 10);
+    expect(CANONICAL_PRICING['anthropic:claude-haiku-4-5']).toMatchObject({ input: 1.0, output: 5.0 });
+    expect(CANONICAL_PRICING['anthropic:claude-haiku-4-5-20251001']).toMatchObject({ input: 1.0, output: 5.0 });
+  });
+
   test('Fable 5 present at $10/$50', () => {
     expect(CANONICAL_PRICING['anthropic:claude-fable-5']).toMatchObject({ input: 10.0, output: 50.0 });
   });
