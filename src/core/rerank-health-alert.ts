@@ -1,10 +1,16 @@
 /**
  * Local reranker health edge detector + fleet notification hook.
  *
- * Search remains fail-open. The first failure transition pages #alerts, repeated
- * failures stay suppressed, and the first subsequent valid rerank emits one
- * recovery to #alerts. State lives beside the rerank audit so transitions survive
- * process restarts and one-shot CLI invocations.
+ * Search remains fail-open. A failure opens a degrade episode but does NOT page:
+ * the local reranker sits behind an SSH tunnel to a host that reboots and
+ * dual-boots, and every short flap used to page #alerts (9 pages/day on
+ * 2026-10-09, card t_96c519fb). The episode pages #alerts only when a failure
+ * is still observed PAGE_HOLD_MS after it opened, and at most once per
+ * PAGE_COOLDOWN_MS; a later episode inside the cooldown gets one #logs line.
+ * Recovery of an announced episode goes to #logs (resolves are not pages).
+ * Brief flaps that recover inside the hold stay in the rerank-failures audit
+ * only. State lives beside the rerank audit so transitions survive process
+ * restarts and one-shot CLI invocations.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -15,17 +21,29 @@ import { resolveAuditDir } from './audit/audit-writer.ts';
 import type { RerankFailureReason } from './rerank-audit.ts';
 
 const DISCORD_ALERTS_CHANNEL = '1480528231286181948';
+const DISCORD_LOGS_CHANNEL = '1480525090331561984';
+
+/** A degrade must still be failing this long after it opened before it pages. */
+const PAGE_HOLD_MS = 15 * 60 * 1000;
+/** At most one #alerts page per this window; later episodes go to #logs. */
+const PAGE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 interface RerankHealthState {
   status: 'healthy' | 'failed';
   updated_at: string;
   model?: string;
   reason?: RerankFailureReason;
+  /** ISO time the current degrade episode opened (status=failed only). */
+  failed_since?: string;
+  /** True once the current episode was announced (#alerts page or #logs line). */
+  announced?: boolean;
+  /** ISO time of the last #alerts page; survives recovery so the cooldown holds. */
+  last_paged_at?: string;
 }
 
 export interface RerankHealthNotification {
   kind: 'degraded' | 'recovered';
-  severity: 'error' | 'info';
+  severity: 'error' | 'warn' | 'info';
   target: string;
   model: string;
   reason: RerankFailureReason;
@@ -36,6 +54,16 @@ type Reporter = (notification: RerankHealthNotification) => void;
 
 let statePathForTests: string | null = null;
 let reporterForTests: Reporter | null = null;
+let nowForTests: (() => number) | null = null;
+
+function nowMs(): number {
+  return nowForTests ? nowForTests() : Date.now();
+}
+
+function msSince(iso: string | undefined, now: number): number {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? now - t : Number.POSITIVE_INFINITY;
+}
 
 function statePath(): string {
   const override = process.env.GBRAIN_RERANK_HEALTH_STATE_FILE?.trim();
@@ -116,20 +144,48 @@ export function recordRerankFailure(input: {
   // tests must not mutate operator state or page real channels.
   if (process.env.NODE_ENV === 'test' && reporterForTests === null) return 'suppressed';
   const state = readState();
-  if (state.status === 'failed') return 'suppressed';
+  const now = nowMs();
+  const nowIso = new Date(now).toISOString();
 
-  const now = new Date().toISOString();
-  writeState({ status: 'failed', updated_at: now, model: input.model, reason: input.reason });
-  report({
-    kind: 'degraded',
-    severity: 'error',
-    target: DISCORD_ALERTS_CHANNEL,
+  if (state.status !== 'failed') {
+    // Open the episode silently; it pages only if it outlives PAGE_HOLD_MS.
+    writeState({
+      status: 'failed',
+      updated_at: nowIso,
+      model: input.model,
+      reason: input.reason,
+      failed_since: nowIso,
+      announced: false,
+      ...(state.last_paged_at ? { last_paged_at: state.last_paged_at } : {}),
+    });
+    return 'suppressed';
+  }
+  if (state.announced) return 'suppressed';
+  const openFor = msSince(state.failed_since, now);
+  if (openFor < PAGE_HOLD_MS) return 'suppressed';
+
+  const minutes = Number.isFinite(openFor) ? Math.round(openFor / 60000) : PAGE_HOLD_MS / 60000;
+  const page = msSince(state.last_paged_at, now) >= PAGE_COOLDOWN_MS;
+  writeState({
+    ...state,
+    updated_at: nowIso,
     model: input.model,
     reason: input.reason,
-    message:
-      `🔴 **gbrain reranker · degraded**\n` +
-      `Failure: ${input.reason} (${input.model})\n` +
-      'Active degrade: search is returning un-reranked hybrid results.',
+    announced: true,
+    ...(page ? { last_paged_at: nowIso } : {}),
+  });
+  report({
+    kind: 'degraded',
+    severity: page ? 'error' : 'warn',
+    target: page ? DISCORD_ALERTS_CHANNEL : DISCORD_LOGS_CHANNEL,
+    model: input.model,
+    reason: input.reason,
+    message: page
+      ? `🔴 **gbrain reranker · degraded**\n` +
+        `Failure: ${input.reason} (${input.model}), failing for ${minutes} min\n` +
+        'Active degrade: search is returning un-reranked hybrid results.'
+      : `🟠 gbrain reranker · degraded again: ${input.reason} (${input.model}), failing for ${minutes} min. ` +
+        'Already paged in the last 6 h, so this is logged, not paged. Search is un-reranked.',
   });
   return 'notified';
 }
@@ -140,11 +196,18 @@ export function recordRerankSuccess(input: { model: string }): 'notified' | 'noo
   if (state.status !== 'failed') return 'noop';
 
   const priorReason = state.reason ?? 'unknown';
-  writeState({ status: 'healthy', updated_at: new Date().toISOString(), model: input.model });
+  writeState({
+    status: 'healthy',
+    updated_at: new Date(nowMs()).toISOString(),
+    model: input.model,
+    ...(state.last_paged_at ? { last_paged_at: state.last_paged_at } : {}),
+  });
+  // A flap that recovered inside the hold was never announced: nothing to resolve.
+  if (!state.announced) return 'noop';
   report({
     kind: 'recovered',
     severity: 'info',
-    target: DISCORD_ALERTS_CHANNEL,
+    target: DISCORD_LOGS_CHANNEL,
     model: input.model,
     reason: priorReason,
     message:
@@ -161,4 +224,8 @@ export function __setRerankHealthReporterForTests(reporter: Reporter | null): vo
 
 export function __setRerankHealthStatePathForTests(path: string | null): void {
   statePathForTests = path;
+}
+
+export function __setRerankHealthClockForTests(now: (() => number) | null): void {
+  nowForTests = now;
 }
