@@ -16,7 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { resolveAuditDir } from './audit/audit-writer.ts';
 import type { RerankFailureReason } from './rerank-audit.ts';
 
@@ -30,6 +30,18 @@ const PAGE_HOLD_MS = 15 * 60 * 1000;
 /** At most one #alerts page per this window; later episodes go to #logs. */
 const PAGE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * FLEET FORK PATCH (t_38369f66): the local zerank-2 primary lives on ACE-AI (tunnel :18084), a dual-boot
+ * box. Booted into Windows on purpose, the reranker is OFF by design, not degraded: 10-11 13:08 PT ACE-AI
+ * went to Windows and 13:25 PT this paged #alerts 'degraded'. A ping/:22 probe cannot tell (Windows answers
+ * both), so ask the fleet's host_os preflight, the same one every OS-dependent cron uses: rc 76 = the host
+ * is in its other OS. A transport failure there is announced once to #logs as DEFERRED. Any probe error,
+ * a Linux/down host, or a non-transport reason keeps the #alerts page.
+ */
+const RERANK_HOST = process.env.GBRAIN_RERANK_HOST?.trim() || 'ace-ai';
+const HOST_OS_RC_OTHER_OS = 76;
+const TRANSPORT_REASONS = new Set<RerankFailureReason>(['network', 'timeout']);
+
 interface RerankHealthState {
   status: 'healthy' | 'failed';
   updated_at: string;
@@ -41,10 +53,12 @@ interface RerankHealthState {
   announced?: boolean;
   /** ISO time of the last #alerts page; survives recovery so the cooldown holds. */
   last_paged_at?: string;
+  /** True when the episode was announced as DEFERRED (host in its other OS). */
+  os_deferred?: boolean;
 }
 
 export interface RerankHealthNotification {
-  kind: 'degraded' | 'recovered';
+  kind: 'degraded' | 'deferred' | 'recovered';
   severity: 'error' | 'warn' | 'info';
   target: string;
   model: string;
@@ -53,10 +67,31 @@ export interface RerankHealthNotification {
 }
 
 type Reporter = (notification: RerankHealthNotification) => void;
+/** The host_os preflight line when the reranker host is in its other OS, else null. */
+type OsDeferral = () => string | null;
 
 let statePathForTests: string | null = null;
 let reporterForTests: Reporter | null = null;
 let nowForTests: (() => number) | null = null;
+let osDeferralForTests: OsDeferral | null = null;
+
+function defaultOsDeferral(): string | null {
+  const hostOs = process.env.GBRAIN_RERANK_HOST_OS_PATH?.trim()
+    || join(homedir(), '.hermes', 'scripts', 'lib', 'host_os.py');
+  if (!existsSync(hostOs)) return null;
+  const r = spawnSync('/usr/bin/python3', [hostOs, RERANK_HOST, '--require', 'linux', '--job', 'gbrain-reranker'],
+    { encoding: 'utf8', timeout: 8000 });
+  if (r.error || r.status !== HOST_OS_RC_OTHER_OS) return null;
+  return (r.stderr || r.stdout || '').trim() || `${RERANK_HOST} is in its other OS (host_os rc 76)`;
+}
+
+function osDeferral(): string | null {
+  try {
+    return (osDeferralForTests ?? defaultOsDeferral)();
+  } catch {
+    return null;  // fail toward the page
+  }
+}
 
 function nowMs(): number {
   return nowForTests ? nowForTests() : Date.now();
@@ -170,6 +205,21 @@ export function recordRerankFailure(input: {
   if (openFor < PAGE_HOLD_MS) return 'suppressed';
 
   const minutes = Number.isFinite(openFor) ? Math.round(openFor / 60000) : PAGE_HOLD_MS / 60000;
+  const deferral = TRANSPORT_REASONS.has(input.reason) ? osDeferral() : null;
+  if (deferral) {
+    writeState({ ...state, updated_at: nowIso, model: input.model, reason: input.reason, announced: true,
+      os_deferred: true });
+    report({
+      kind: 'deferred',
+      severity: 'info',
+      target: DISCORD_LOGS_CHANNEL,
+      model: input.model,
+      reason: input.reason,
+      message: `⏸️ gbrain reranker · DEFERRED (host in other OS), not degraded: ${input.reason} ` +
+        `(${input.model}) for ${minutes} min. ${deferral}. Search is un-reranked until it boots Linux.`,
+    });
+    return 'notified';
+  }
   const page = msSince(state.last_paged_at, now) >= PAGE_COOLDOWN_MS;
   writeState({
     ...state,
@@ -233,6 +283,10 @@ export function __setRerankHealthStatePathForTests(path: string | null): void {
 
 /** The real notify.py spawn, for the contract test that pins its env (t_ea800980). */
 export const __defaultRerankReporterForTests: Reporter = defaultReporter;
+
+export function __setRerankOsDeferralForTests(probe: OsDeferral | null): void {
+  osDeferralForTests = probe;
+}
 
 export function __setRerankHealthClockForTests(now: (() => number) | null): void {
   nowForTests = now;

@@ -15,6 +15,7 @@ import {
   __setRerankHealthReporterForTests,
   __setRerankHealthStatePathForTests,
   RERANK_NOTIFY_PRODUCER,
+  __setRerankOsDeferralForTests,
   type RerankHealthNotification,
 } from '../../src/core/rerank-health-alert.ts';
 import { applyReranker, type RerankerOpts } from '../../src/core/search/rerank.ts';
@@ -52,9 +53,11 @@ beforeEach(() => {
   __setRerankHealthReporterForTests((notification) => {
     notifications.push(notification);
   });
+  __setRerankOsDeferralForTests(() => null);
 });
 
 afterEach(() => {
+  __setRerankOsDeferralForTests(null);
   __setRerankHealthReporterForTests(null);
   __setRerankHealthStatePathForTests(null);
   __setRerankHealthClockForTests(null);
@@ -174,6 +177,51 @@ describe('applyReranker health transitions', () => {
       reason: 'unknown',
       target: ALERTS,
     });
+  });
+
+  test('host in its other OS (host_os rc 76): sustained transport failure is DEFERRED to #logs, not paged', async () => {
+    // t_38369f66: ACE-AI booted Windows 10-11 13:08 PT; 13:25 PT paged #alerts 'gbrain reranker · degraded'.
+    __setRerankOsDeferralForTests(() => '[host-os] deferred: host in other OS -- ace-ai is windows; rc 76');
+    const input = [result('first'), result('second')];
+    const down = opts(async () => {
+      throw new RerankError('connect ECONNREFUSED', 'network');
+    });
+    await applyReranker('a', input, down);
+    clock += 16 * MIN;
+    await applyReranker('b', input, down);
+    clock += 30 * MIN;
+    await applyReranker('c', input, down);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toMatchObject({ kind: 'deferred', severity: 'info', target: LOGS, reason: 'network' });
+    expect(notifications[0]!.message).toContain('DEFERRED');
+    expect(notifications.some((n) => n.target === ALERTS)).toBe(false);
+    // Boots Linux again: the recovery closes on #logs.
+    await applyReranker('ok', input, opts(healthyFn));
+    expect(notifications.at(-1)).toMatchObject({ kind: 'recovered', target: LOGS });
+  });
+
+  test('host in its other OS does not excuse a non-transport failure (auth still pages)', async () => {
+    __setRerankOsDeferralForTests(() => 'rc 76');
+    const input = [result('first'), result('second')];
+    const auth = opts(async () => {
+      throw new RerankError('invalid api key', 'auth', 401);
+    });
+    await applyReranker('a', input, auth);
+    clock += 16 * MIN;
+    await applyReranker('b', input, auth);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]).toMatchObject({ kind: 'degraded', target: ALERTS });
+  });
+
+  test('host in Linux (no deferral) keeps the #alerts page for a transport failure', async () => {
+    const input = [result('first'), result('second')];
+    const down = opts(async () => {
+      throw new RerankError('connect ECONNREFUSED', 'network');
+    });
+    await applyReranker('a', input, down);
+    clock += 16 * MIN;
+    await applyReranker('b', input, down);
+    expect(notifications[0]).toMatchObject({ kind: 'degraded', severity: 'error', target: ALERTS });
   });
 });
 
