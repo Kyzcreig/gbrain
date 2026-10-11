@@ -5,18 +5,21 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RerankError } from '../../src/core/ai/gateway.ts';
 import {
+  __defaultRerankReporterForTests,
   __setRerankHealthClockForTests,
   __setRerankHealthReporterForTests,
   __setRerankHealthStatePathForTests,
+  RERANK_NOTIFY_PRODUCER,
   type RerankHealthNotification,
 } from '../../src/core/rerank-health-alert.ts';
 import { applyReranker, type RerankerOpts } from '../../src/core/search/rerank.ts';
 import type { SearchResult } from '../../src/core/types.ts';
+import { withEnv } from '../helpers/with-env.ts';
 
 function result(slug: string): SearchResult {
   return {
@@ -171,5 +174,29 @@ describe('applyReranker health transitions', () => {
       reason: 'unknown',
       target: ALERTS,
     });
+  });
+});
+
+describe('defaultReporter notify.py spawn', () => {
+  test('stamps NOTIFY_PRODUCER so the notify ledger names the sender (not `unknown`)', async () => {
+    const out = join(dir, 'notify-env.txt');
+    const stub = join(dir, 'notify-stub.sh');
+    writeFileSync(stub, `printf '%s|%s' "$NOTIFY_PRODUCER" "$*" > "${out}"\n`);
+    chmodSync(stub, 0o755);
+    await withEnv({
+      GBRAIN_RERANK_NOTIFY_PATH: stub,
+      GBRAIN_RERANK_NOTIFY_PYTHON: '/bin/sh',
+      NOTIFY_PRODUCER: undefined,
+    }, async () => {
+      __defaultRerankReporterForTests({
+        kind: 'degraded', severity: 'error', target: ALERTS,
+        model: 'm', reason: 'network', message: 'probe',
+      });
+      for (let i = 0; i < 100 && !existsSync(out); i++) await Bun.sleep(20);
+    });
+    expect(RERANK_NOTIFY_PRODUCER).toBe('gbrain-rerank-health');
+    const [producer, args] = readFileSync(out, 'utf8').split('|');
+    expect(producer).toBe('gbrain-rerank-health');
+    expect(args).toContain(`--target ${ALERTS}`);
   });
 });

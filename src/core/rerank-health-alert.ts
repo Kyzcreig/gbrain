@@ -22,6 +22,8 @@ import type { RerankFailureReason } from './rerank-audit.ts';
 
 const DISCORD_ALERTS_CHANNEL = '1480528231286181948';
 const DISCORD_LOGS_CHANNEL = '1480525090331561984';
+/** Producer name in the fleet notify ledger and pager-owners.json (t_ea800980). */
+export const RERANK_NOTIFY_PRODUCER = 'gbrain-rerank-health';
 
 /** A degrade must still be failing this long after it opened before it pages. */
 const PAGE_HOLD_MS = 15 * 60 * 1000;
@@ -117,7 +119,10 @@ function defaultReporter(notification: RerankHealthNotification): void {
     {
       detached: true,
       stdio: 'ignore',
-      env: { ...process.env, HERMES_HOME: hermesHome },
+      // NOTIFY_PRODUCER names this sender in notify.py's send ledger (else it books
+      // `unknown`: the parent is bun) and lets fleet-hosts.json list it as an
+      // ace-ai dependent, so a page during an announced ace-ai down goes to #logs.
+      env: { ...process.env, HERMES_HOME: hermesHome, NOTIFY_PRODUCER: RERANK_NOTIFY_PRODUCER },
     },
   );
   child.on('error', (err) => {
@@ -225,6 +230,9 @@ export function __setRerankHealthReporterForTests(reporter: Reporter | null): vo
 export function __setRerankHealthStatePathForTests(path: string | null): void {
   statePathForTests = path;
 }
+
+/** The real notify.py spawn, for the contract test that pins its env (t_ea800980). */
+export const __defaultRerankReporterForTests: Reporter = defaultReporter;
 
 export function __setRerankHealthClockForTests(now: (() => number) | null): void {
   nowForTests = now;
